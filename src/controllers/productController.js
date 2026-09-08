@@ -183,6 +183,7 @@ export const deleteProduct = async (req, res) => {
 // Get all products
 export const getProducts = async (req, res) => {
   try {
+    console.log(1);
     const cached = await redis.get(PRODUCTS_KEY);
 
     if (cached) {

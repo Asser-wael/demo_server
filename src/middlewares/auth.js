@@ -92,3 +92,35 @@ export const optionalAuthMiddleware = (req, res, next) => {
 
   }
 };
+
+
+export const socketAuth = (socket, next) => {
+  try {
+    const token =
+      socket.handshake.auth?.token ||
+      socket.handshake.headers?.authorization?.replace("Bearer ", "");
+
+    if (!token) {
+      return next(new Error("NO_TOKEN"));
+    }
+
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET
+    );
+
+    socket.user = {
+      id: decoded.id,
+    };
+
+    next();
+  } catch (error) {
+    console.error("Socket JWT Error:", error.message);
+
+    if (error.name === "TokenExpiredError") {
+      return next(new Error("TOKEN_EXPIRED"));
+    }
+
+    return next(new Error("INVALID_TOKEN"));
+  }
+};

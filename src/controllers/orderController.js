@@ -182,7 +182,21 @@ export const checkout = async (req, res) => {
                     : undefined,
             totalPrice,
         });
-
+        // -------------------------------------------------------- 
+        // TRIGGER N8N WORKFLOW (IF WALLET PAYMENT)
+        // -------------------------------------------------------- 
+        if (paymentMethod === "wallet" && imageUrl) {
+            axios.post("https://asserwael.app.n8n.cloud/webhook-test/payment-verification", {
+                orderId: order._id,
+                amount: totalPrice,
+                senderName,
+                senderPhone,
+                transactionId,
+                imageUrl,
+            }).catch(err => {
+                console.error("Failed to trigger n8n workflow:", err.message);
+            });
+        }
         if (isBuyNow !== "true") user.cart = [];
 
         user.orders.push(order._id);

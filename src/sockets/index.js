@@ -1,11 +1,9 @@
 import { Server } from "socket.io";
-import { adminMiddleware, protect } from "../middlewares/auth";
 
 let io;
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
-  "https://lux-client-one.vercel.app",
 ].filter(Boolean);
 
 const initSocket = (server) => {
@@ -16,10 +14,35 @@ const initSocket = (server) => {
     },
   });
 
+  // =========================
+  // SOCKET AUTHENTICATION
+  // =========================
+  io.use(async (socket, next) => {
+    try {
+      // لو الـ token جاي من client
+      const token =
+        socket.handshake.auth?.token ||
+        socket.handshake.headers?.authorization?.split(" ")[1];
+
+      if (!token) {
+        return next(new Error("Authentication required"));
+      }
+      next();
+    } catch (error) {
+      console.error("Socket authentication error:", error);
+      next(new Error("Socket authentication failed"));
+    }
+  });
+
+  // =========================
+  // CONNECTION
+  // =========================
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    // عدد المستخدمين المتصلين حاليًا
+    // =========================
+    // ONLINE USERS
+    // =========================
     const onlineUsers = io.engine.clientsCount;
 
     io.emit("onlineUsers", onlineUsers);
@@ -27,7 +50,17 @@ const initSocket = (server) => {
     // =========================
     // ADMIN ROOM
     // =========================
-    socket.on("admin",  protect, adminMiddleware ,() => {
+    socket.on("admin", () => {
+      // لو الـ socket authenticated
+      // تقدر تتحقق من role هنا
+      if (socket.user?.role !== "admin") {
+        console.log(
+          `Unauthorized admin room attempt: ${socket.id}`
+        );
+
+        return;
+      }
+
       socket.join("adminroom");
 
       console.log(`${socket.id} joined adminroom`);
@@ -36,7 +69,7 @@ const initSocket = (server) => {
     // =========================
     // USER ORDER ROOM
     // =========================
-    socket.on("userOrder", protect, (idOrder) => {
+    socket.on("userOrder", (idOrder) => {
       if (!idOrder) return;
 
       const room = `userOrder-${idOrder}`;
@@ -57,6 +90,7 @@ const initSocket = (server) => {
       console.log(
         `User disconnected: ${socket.id} | Reason: ${reason}`
       );
+
       console.log("Online users:", activeUsers);
     });
   });
@@ -64,6 +98,9 @@ const initSocket = (server) => {
   return io;
 };
 
+// =========================
+// GET IO
+// =========================
 const getIO = () => {
   if (!io) {
     throw new Error("Socket.io not initialized");

@@ -40,7 +40,8 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await UserModel.findOne({ email });
+    const user = await UserModel.findOne({ email }).select("+password");
+
     if (!user) {
       return res.status(400).json({ message: "User doesn't exist!", type: "error" });
     }
@@ -53,16 +54,14 @@ export const login = async (req, res) => {
     const accessToken = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    console.log(process.env.NODE_ENV);
 
     res.cookie("refreshToken", refreshToken, {
-      httpOnly: true, 
-      secure: true,  
-      sameSite: "none", 
-      maxAge: 7 * 24 * 60 * 60 * 1000, 
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // #ماترجعش الباسورد الهاش مع اليوزر
     const userSafe = user.toObject();
     delete userSafe.password;
 
@@ -118,8 +117,8 @@ export const refresh = async (req, res) => {
       accessToken,
     });
 
-} catch (error) {
-  console.log(error.name);
-  res.status(403).json({ message: "Invalid or expired refresh token" });
-}
+  } catch (error) {
+    console.log(error.name);
+    res.status(403).json({ message: "Invalid or expired refresh token" });
+  }
 };
