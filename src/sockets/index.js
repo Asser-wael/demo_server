@@ -1,10 +1,11 @@
 import { Server } from "socket.io";
+import jwt from "jsonwebtoken";
 
 let io;
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
-  "https://demo-client-ashen.vercel.app"
+  "https://demo-client-ashen.vercel.app",
 ].filter(Boolean);
 
 const initSocket = (server) => {
@@ -12,7 +13,11 @@ const initSocket = (server) => {
     cors: {
       origin: allowedOrigins,
       credentials: true,
+      methods: ["GET", "POST"],
     },
+
+    // مهم مع Railway
+    transports: ["polling", "websocket"],
   });
 
   // =========================
@@ -20,7 +25,6 @@ const initSocket = (server) => {
   // =========================
   io.use(async (socket, next) => {
     try {
-      // لو الـ token جاي من client
       const token =
         socket.handshake.auth?.token ||
         socket.handshake.headers?.authorization?.split(" ")[1];
@@ -28,10 +32,21 @@ const initSocket = (server) => {
       if (!token) {
         return next(new Error("Authentication required"));
       }
+
+      // Verify JWT
+      const decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET
+      );
+
+      // خزّن بيانات المستخدم داخل socket
+      socket.user = decoded;
+
       next();
     } catch (error) {
-      console.error("Socket authentication error:", error);
-      next(new Error("Socket authentication failed"));
+      console.error("Socket authentication error:", error.message);
+
+      return next(new Error("Invalid or expired token"));
     }
   });
 
@@ -39,7 +54,8 @@ const initSocket = (server) => {
   // CONNECTION
   // =========================
   io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
+    console.log("✅ User connected:", socket.id);
+    console.log("👤 User:", socket.user);
 
     // =========================
     // ONLINE USERS
@@ -52,11 +68,9 @@ const initSocket = (server) => {
     // ADMIN ROOM
     // =========================
     socket.on("admin", () => {
-      // لو الـ socket authenticated
-      // تقدر تتحقق من role هنا
       if (socket.user?.role !== "admin") {
         console.log(
-          `Unauthorized admin room attempt: ${socket.id}`
+          `❌ Unauthorized admin room attempt: ${socket.id}`
         );
 
         return;
@@ -64,7 +78,9 @@ const initSocket = (server) => {
 
       socket.join("adminroom");
 
-      console.log(`${socket.id} joined adminroom`);
+      console.log(
+        `👑 ${socket.id} joined adminroom`
+      );
     });
 
     // =========================
@@ -77,7 +93,9 @@ const initSocket = (server) => {
 
       socket.join(room);
 
-      console.log(`${socket.id} joined room: ${room}`);
+      console.log(
+        `📦 ${socket.id} joined room: ${room}`
+      );
     });
 
     // =========================
@@ -89,10 +107,13 @@ const initSocket = (server) => {
       io.emit("onlineUsers", activeUsers);
 
       console.log(
-        `User disconnected: ${socket.id} | Reason: ${reason}`
+        `❌ User disconnected: ${socket.id} | Reason: ${reason}`
       );
 
-      console.log("Online users:", activeUsers);
+      console.log(
+        "👥 Online users:",
+        activeUsers
+      );
     });
   });
 
