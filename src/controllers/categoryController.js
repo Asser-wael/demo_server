@@ -36,7 +36,7 @@ const uploadImage = (file) => {
 export const addCategory = async (req, res) => {
     try {
         const { name } = req.body;
-console.log(1);
+console.log(req.file,name);
 
 if (!name) {
     return res.status(400).json({
