@@ -10,7 +10,9 @@ export const getCart = async (req, res) => {
         );
 
         if (!user)
-            return res.status(404).json({ message: "المستخدم غير موجود" });
+            return res.status(404).json({
+                message: "المستخدم غير موجود"
+            });
 
         res.status(200).json({
             success: true,
