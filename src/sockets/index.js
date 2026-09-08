@@ -13,116 +13,63 @@ const initSocket = (server) => {
     cors: {
       origin: allowedOrigins,
       credentials: true,
-      methods: ["GET", "POST"],
     },
-
-    // مهم مع Railway
     transports: ["polling", "websocket"],
   });
 
-  // =========================
-  // SOCKET AUTHENTICATION
-  // =========================
-  io.use(async (socket, next) => {
+  // Authentication
+  io.use((socket, next) => {
     try {
-      const token =
-        socket.handshake.auth?.token ||
-        socket.handshake.headers?.authorization?.split(" ")[1];
+      const token = socket.handshake.auth?.token;
 
       if (!token) {
         return next(new Error("Authentication required"));
       }
 
-      // Verify JWT
-      const decoded = jwt.verify(
+      socket.user = jwt.verify(
         token,
         process.env.JWT_SECRET
       );
 
-      // خزّن بيانات المستخدم داخل socket
-      socket.user = decoded;
-
       next();
     } catch (error) {
-      console.error("Socket authentication error:", error.message);
-
-      return next(new Error("Invalid or expired token"));
+      next(new Error("Invalid token"));
     }
   });
 
-  // =========================
-  // CONNECTION
-  // =========================
+  // Connection
   io.on("connection", (socket) => {
-    console.log("✅ User connected:", socket.id);
-    console.log("👤 User:", socket.user);
+    console.log("User connected:", socket.id);
 
-    // =========================
-    // ONLINE USERS
-    // =========================
-    const onlineUsers = io.engine.clientsCount;
+    // Online users
+    io.emit("onlineUsers", io.engine.clientsCount);
 
-    io.emit("onlineUsers", onlineUsers);
-
-    // =========================
-    // ADMIN ROOM
-    // =========================
+    // Admin
     socket.on("admin", () => {
-      if (socket.user?.role !== "admin") {
-        console.log(
-          `❌ Unauthorized admin room attempt: ${socket.id}`
-        );
-
-        return;
+      if (socket.user?.role === "admin") {
+        socket.join("adminroom");
+        console.log("Admin joined");
       }
-
-      socket.join("adminroom");
-
-      console.log(
-        `👑 ${socket.id} joined adminroom`
-      );
     });
 
-    // =========================
-    // USER ORDER ROOM
-    // =========================
-    socket.on("userOrder", (idOrder) => {
-      if (!idOrder) return;
+    // User order
+    socket.on("userOrder", (orderId) => {
+      if (!orderId) return;
 
-      const room = `userOrder-${idOrder}`;
-
-      socket.join(room);
-
-      console.log(
-        `📦 ${socket.id} joined room: ${room}`
-      );
+      socket.join(`userOrder-${orderId}`);
     });
 
-    // =========================
-    // DISCONNECT
-    // =========================
-    socket.on("disconnect", (reason) => {
-      const activeUsers = io.engine.clientsCount;
+    // Disconnect
+    socket.on("disconnect", () => {
+      io.emit("onlineUsers", io.engine.clientsCount);
 
-      io.emit("onlineUsers", activeUsers);
-
-      console.log(
-        `❌ User disconnected: ${socket.id} | Reason: ${reason}`
-      );
-
-      console.log(
-        "👥 Online users:",
-        activeUsers
-      );
+      console.log("User disconnected:", socket.id);
     });
   });
 
   return io;
 };
 
-// =========================
-// GET IO
-// =========================
 const getIO = () => {
   if (!io) {
     throw new Error("Socket.io not initialized");
