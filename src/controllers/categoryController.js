@@ -36,30 +36,36 @@ const uploadImage = (file) => {
 export const addCategory = async (req, res) => {
     try {
         const { name } = req.body;
+console.log(1);
 
-        if (!name) {
-            return res.status(400).json({
-                success: false,
-                message: "Category name is required.",
-            });
-        }
+if (!name) {
+    return res.status(400).json({
+        success: false,
+        message: "Category name is required.",
+    });
+}
+console.log(1);
 
-        if (!req.file) {
-            return res.status(400).json({
-                success: false,
-                message: "Category image is required.",
-            });
-        }
+if (!req.file) {
+    return res.status(400).json({
+        success: false,
+        message: "Category image is required.",
+    });
+}
+console.log(1);
 
-        const result = await uploadImage(req.file);
+const result = await uploadImage(req.file);
+console.log(1);
 
-        const category = await Category.create({
-            name,
-            image: result.secure_url,
-            imageId: result.public_id,
-        });
+const category = await Category.create({
+    name,
+    image: result.secure_url,
+    imageId: result.public_id,
+});
 
-        await redis.del(CATEGORIES_CACHE_KEY);
+console.log(1);
+await redis.del(CATEGORIES_CACHE_KEY);
+console.log(1);
 
         return res.status(201).json({
             success: true,
