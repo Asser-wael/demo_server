@@ -22,6 +22,7 @@ app.set("trust proxy", 1);
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
+  "https://demo-client-ashen.vercel.app/"
 ].filter(Boolean);
 
 app.use(
