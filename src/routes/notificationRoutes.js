@@ -88,7 +88,7 @@ router.delete(
     deleteNotification
 );
 
-// Save admin push subscription
+// Save push subscription
 router.post(
     "/subscribe",
     protect,
