@@ -1,14 +1,13 @@
 import { Server } from "socket.io";
-import User from "../models/User.js";
-import { socketAuth } from "../middlewares/auth.js";
+import { adminMiddleware, protect } from "../middlewares/auth";
 
 let io;
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
   "https://demo-client-ashen.vercel.app",
-].filter(Boolean);
 
+].filter(Boolean);
 
 const initSocket = (server) => {
   io = new Server(server, {
@@ -29,7 +28,7 @@ const initSocket = (server) => {
     // =========================
     // ADMIN ROOM
     // =========================
-    socket.on("admin",  protect, adminMiddleware ,() => {
+    socket.on("admin", protect, adminMiddleware, () => {
       socket.join("adminroom");
 
       console.log(`${socket.id} joined adminroom`);
