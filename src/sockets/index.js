@@ -1,12 +1,11 @@
 import { Server } from "socket.io";
-import { adminMiddleware, protect } from "../middlewares/auth";
+import jwt from "jsonwebtoken";
 
 let io;
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
   "https://demo-client-ashen.vercel.app",
-
 ].filter(Boolean);
 
 const initSocket = (server) => {
@@ -17,39 +16,114 @@ const initSocket = (server) => {
     },
   });
 
+  // ==========================================
+  // SOCKET AUTHENTICATION
+  // ==========================================
+  io.use(async (socket, next) => {
+    try {
+      const token = socket.handshake.auth?.token;
+
+      if (!token) {
+        return next(new Error("Authentication required"));
+      }
+
+      // Verify JWT
+      const decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET
+      );
+
+      if (!decoded) {
+        return next(new Error("Invalid token"));
+      }
+
+      socket.user = decoded;
+
+      next();
+    } catch (error) {
+      console.error("Socket authentication error:", error.message);
+
+      next(new Error("Authentication failed"));
+    }
+  });
+
+  // ==========================================
+  // CONNECTION
+  // ==========================================
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
+    console.log("User:", socket.user);
 
-    // عدد المستخدمين المتصلين حاليًا
+    // ==========================================
+    // ONLINE USERS
+    // ==========================================
     const onlineUsers = io.engine.clientsCount;
 
     io.emit("onlineUsers", onlineUsers);
 
-    // =========================
+    // ==========================================
     // ADMIN ROOM
-    // =========================
-    socket.on("admin", protect, adminMiddleware, () => {
-      socket.join("adminroom");
+    // ==========================================
+    socket.on("admin", () => {
+      try {
+        // Check authentication
+        if (!socket.user) {
+          return;
+        }
 
-      console.log(`${socket.id} joined adminroom`);
+        // Check admin role
+        if (socket.user.role !== "admin") {
+          console.log(
+            `Unauthorized admin room attempt: ${socket.id}`
+          );
+
+          return;
+        }
+
+        socket.join("adminroom");
+
+        console.log(
+          `${socket.id} joined adminroom`
+        );
+      } catch (error) {
+        console.error(
+          "Admin room error:",
+          error.message
+        );
+      }
     });
 
-    // =========================
+    // ==========================================
     // USER ORDER ROOM
-    // =========================
-    socket.on("userOrder", protect, (idOrder) => {
-      if (!idOrder) return;
+    // ==========================================
+    socket.on("userOrder", (idOrder) => {
+      try {
+        if (!socket.user) {
+          return;
+        }
 
-      const room = `userOrder-${idOrder}`;
+        if (!idOrder) {
+          return;
+        }
 
-      socket.join(room);
+        const room = `userOrder-${idOrder}`;
 
-      console.log(`${socket.id} joined room: ${room}`);
+        socket.join(room);
+
+        console.log(
+          `${socket.id} joined room: ${room}`
+        );
+      } catch (error) {
+        console.error(
+          "User order room error:",
+          error.message
+        );
+      }
     });
 
-    // =========================
+    // ==========================================
     // DISCONNECT
-    // =========================
+    // ==========================================
     socket.on("disconnect", (reason) => {
       const activeUsers = io.engine.clientsCount;
 
@@ -58,13 +132,20 @@ const initSocket = (server) => {
       console.log(
         `User disconnected: ${socket.id} | Reason: ${reason}`
       );
-      console.log("Online users:", activeUsers);
+
+      console.log(
+        "Online users:",
+        activeUsers
+      );
     });
   });
 
   return io;
 };
 
+// ==========================================
+// GET IO
+// ==========================================
 const getIO = () => {
   if (!io) {
     throw new Error("Socket.io not initialized");
@@ -73,4 +154,7 @@ const getIO = () => {
   return io;
 };
 
-export { initSocket, getIO };
+export {
+  initSocket,
+  getIO,
+};
