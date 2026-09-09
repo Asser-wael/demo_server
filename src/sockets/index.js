@@ -9,6 +9,7 @@ const allowedOrigins = [
   "https://demo-client-ashen.vercel.app",
 ].filter(Boolean);
 
+
 const initSocket = (server) => {
   io = new Server(server, {
     cors: {
@@ -17,42 +18,48 @@ const initSocket = (server) => {
     },
   });
 
-  // Socket authentication
-  io.use(socketAuth);
-
-  io.on("connection", async (socket) => {
+  io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    io.emit("onlineUsers", io.engine.clientsCount);
+    // عدد المستخدمين المتصلين حاليًا
+    const onlineUsers = io.engine.clientsCount;
 
-    // ADMIN
-    const user = await User.findById(socket.user.id);
+    io.emit("onlineUsers", onlineUsers);
 
-    if (user?.role === "admin") {
+    // =========================
+    // ADMIN ROOM
+    // =========================
+    socket.on("admin",  protect, adminMiddleware ,() => {
       socket.join("adminroom");
-      console.log(`${socket.id} joined adminroom`);
-    }
 
-    // USER ORDER
-    socket.on("userOrder", (idOrder) => {
+      console.log(`${socket.id} joined adminroom`);
+    });
+
+    // =========================
+    // USER ORDER ROOM
+    // =========================
+    socket.on("userOrder", protect, (idOrder) => {
       if (!idOrder) return;
 
       const room = `userOrder-${idOrder}`;
 
       socket.join(room);
 
-      console.log(`${socket.id} joined ${room}`);
+      console.log(`${socket.id} joined room: ${room}`);
     });
 
+    // =========================
     // DISCONNECT
+    // =========================
     socket.on("disconnect", (reason) => {
       const activeUsers = io.engine.clientsCount;
 
       io.emit("onlineUsers", activeUsers);
 
       console.log(
-        `Disconnected: ${socket.id} | ${reason}`
+        `User disconnected: ${socket.id} | Reason: ${reason}`
       );
+      console.log("Online users:", activeUsers);
     });
   });
 
@@ -60,7 +67,10 @@ const initSocket = (server) => {
 };
 
 const getIO = () => {
-  if (!io) throw new Error("Socket.io not initialized");
+  if (!io) {
+    throw new Error("Socket.io not initialized");
+  }
+
   return io;
 };
 
