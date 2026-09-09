@@ -1,11 +1,11 @@
 import { Server } from "socket.io";
-import jwt from "jsonwebtoken";
+import { adminMiddleware, protect } from "../middlewares/auth";
 
 let io;
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
-  "https://demo-client-ashen.vercel.app",
+  "https://lux-client-one.vercel.app",
 ].filter(Boolean);
 
 const initSocket = (server) => {
@@ -14,56 +14,50 @@ const initSocket = (server) => {
       origin: allowedOrigins,
       credentials: true,
     },
-    transports: ["polling", "websocket"],
   });
 
-  // Authentication
-  io.use((socket, next) => {
-    try {
-      const token = socket.handshake.auth?.token;
-
-      if (!token) {
-        return next(new Error("Authentication required"));
-      }
-
-      socket.user = jwt.verify(
-        token,
-        process.env.JWT_SECRET
-      );
-
-      next();
-    } catch (error) {
-      next(new Error("Invalid token"));
-    }
-  });
-
-  // Connection
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    // Online users
-    io.emit("onlineUsers", io.engine.clientsCount);
+    // عدد المستخدمين المتصلين حاليًا
+    const onlineUsers = io.engine.clientsCount;
 
-    // Admin
-    socket.on("admin", () => {
-      if (socket.user?.role === "admin") {
-        socket.join("adminroom");
-        console.log("Admin joined");
-      }
+    io.emit("onlineUsers", onlineUsers);
+
+    // =========================
+    // ADMIN ROOM
+    // =========================
+    socket.on("admin",  protect, adminMiddleware ,() => {
+      socket.join("adminroom");
+
+      console.log(`${socket.id} joined adminroom`);
     });
 
-    // User order
-    socket.on("userOrder", (orderId) => {
-      if (!orderId) return;
+    // =========================
+    // USER ORDER ROOM
+    // =========================
+    socket.on("userOrder", protect, (idOrder) => {
+      if (!idOrder) return;
 
-      socket.join(`userOrder-${orderId}`);
+      const room = `userOrder-${idOrder}`;
+
+      socket.join(room);
+
+      console.log(`${socket.id} joined room: ${room}`);
     });
 
-    // Disconnect
-    socket.on("disconnect", () => {
-      io.emit("onlineUsers", io.engine.clientsCount);
+    // =========================
+    // DISCONNECT
+    // =========================
+    socket.on("disconnect", (reason) => {
+      const activeUsers = io.engine.clientsCount;
 
-      console.log("User disconnected:", socket.id);
+      io.emit("onlineUsers", activeUsers);
+
+      console.log(
+        `User disconnected: ${socket.id} | Reason: ${reason}`
+      );
+      console.log("Online users:", activeUsers);
     });
   });
 
