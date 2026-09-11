@@ -164,22 +164,13 @@ export const checkout = async (req, res) => {
         const order = await Order.create({
             user: user._id,
             items: orderItems,
-            shippingAddress: {
-                fullName,
-                phone,
-                city,
-                address,
-            },
+            shippingAddress: { fullName, phone, city, address },
             paymentMethod,
             walletPayment:
                 paymentMethod === "wallet"
-                    ? {
-                        senderName,
-                        senderPhone,
-                        transactionId,
-                        transferImage: imageUrl,
-                    }
+                    ? { senderName, senderPhone, transactionId, transferImage: imageUrl }
                     : undefined,
+            paymentStatus: paymentMethod === "cash" ? "pending" : "pending", // stripe/wallet كلها pending لحد ما تتأكد
             totalPrice,
         });
         // -------------------------------------------------------- 

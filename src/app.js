@@ -13,7 +13,8 @@ import orderRoutes from "./routes/orderRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import accountRoutes from "./routes/accountRoutes.js";
-
+import stripeRoutes from "./routes/stripeRoutes.js";
+import stripeWebhookRoutes from "./routes/stripeWebhookRoutes.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
 const app = express();
@@ -31,7 +32,9 @@ app.use(
     credentials: true, 
   })
 );
+// app.js — عدّل الترتيب ده
 
+app.use("/api/stripe/webhook", express.raw({ type: "application/json" }), stripeWebhookRoutes);
 app.use(express.json());
 app.use(cookieParser());
 
@@ -50,7 +53,7 @@ app.use("/api/auth", authRoutes);
 
 app.use("/api/products", productRoutes);
 app.use("/api/products", productdetailsRoutes);
-
+app.use("/api/stripe", stripeRoutes);
 app.use("/api/account", accountRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/popular", popularRoutes);

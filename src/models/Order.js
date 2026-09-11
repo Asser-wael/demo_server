@@ -1,22 +1,5 @@
 import mongoose from "mongoose";
 
-const orderItemSchema = new mongoose.Schema(
-  {
-    product: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "products",
-      required: true,
-    },
-    name: String,
-    color: String,
-    size: String,
-    price: { type: Number, required: true },
-    quantity: { type: Number, required: true },
-    image: String,
-  },
-  { _id: false }
-);
-
 const orderSchema = new mongoose.Schema(
   {
     user: {
@@ -25,7 +8,23 @@ const orderSchema = new mongoose.Schema(
       required: true,
     },
 
-    items: [orderItemSchema],
+    items: [
+      {
+        product: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "products",
+          required: true,
+        },
+
+        name: String,
+        color: String,
+        size: String,
+        price: Number,
+        quantity: Number,
+        image: String,
+        costPrice: Number,
+      },
+    ],
 
     shippingAddress: {
       fullName: String,
@@ -36,19 +35,24 @@ const orderSchema = new mongoose.Schema(
 
     paymentMethod: {
       type: String,
-      enum: ["cash", "wallet"],
-      default: "cash",
+      enum: ["cash", "wallet", "stripe"],
+      required: true,
     },
 
-    walletPayment: {
-      senderName: String,
-      senderPhone: String,
-      transactionId: String,
-      transferImage: String,
-      verified: {
-        type: Boolean,
-        default: false,
-      },
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "paid", "failed", "refunded"],
+      default: "pending",
+    },
+
+    stripeSessionId: {
+      type: String,
+      default: null,
+    },
+
+    stripePaymentIntentId: {
+      type: String,
+      default: null,
     },
 
     totalPrice: {
@@ -68,7 +72,8 @@ const orderSchema = new mongoose.Schema(
       default: "pending",
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
-
 export default mongoose.model("Order", orderSchema);

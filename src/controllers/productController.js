@@ -87,23 +87,28 @@ export const addProduct = async (req, res) => {
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(1);
 
     const product = await Product.findById(id);
 
+    console.log(2);
     if (!product) {
       return res.status(404).json({
         success: false,
         message: "Product not found.",
       });
     }
+    console.log(3);
 
     const data = {
       ...req.body,
     };
+    console.log(4);
 
     if (data.variants && typeof data.variants === "string") {
       data.variants = JSON.parse(data.variants);
     }
+    console.log(5);
 
     if (req.file) {
       const image = await uploadImage(req.file);
@@ -115,6 +120,7 @@ export const updateProduct = async (req, res) => {
       data.image = image.secure_url;
       data.imageId = image.public_id;
     }
+    console.log(6);
 
     const updatedProduct = await Product.findByIdAndUpdate(
       id,
@@ -125,7 +131,9 @@ export const updateProduct = async (req, res) => {
       }
     );
 
+    console.log(7);
     await clearCache(id);
+    console.log(8);
 
     return res.status(200).json({
       success: true,
