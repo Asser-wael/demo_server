@@ -131,6 +131,8 @@ if (!userId) {
 }
 console.log(req.user?.id);
 const currentUser = await User.findById(userId).select("name");
+console.log(currentUser);
+
 if (!currentUser) {
   return res.status(404).json({ success: false, message: "User not found." });
 }
