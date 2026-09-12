@@ -166,7 +166,6 @@ const totalRating = product.reviews.reduce(
   0
 );
 
-console.log(9);
 product.rating =
 product.numReviews > 0
 ? Number(
@@ -174,7 +173,6 @@ product.numReviews > 0
 )
 : 0;
 
-console.log(10);
 await product.save();
 
 // Clear caches

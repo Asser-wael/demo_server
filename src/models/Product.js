@@ -13,6 +13,7 @@ const sizeSchema = new mongoose.Schema(
 
 const variantSchema = new mongoose.Schema(
   {
+    // variant
     color: {
       name: { type: String, required: true }, // "Red"
     },

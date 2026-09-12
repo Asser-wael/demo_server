@@ -19,7 +19,7 @@ import { errorHandler } from "./middlewares/errorHandler.js";
 
 const app = express();
 
-app.set("trust proxy", 1); 
+app.set("trust proxy", 1);
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
@@ -29,13 +29,14 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: allowedOrigins,
-    credentials: true, 
+    credentials: true,
   })
 );
 // app.js — عدّل الترتيب ده
 
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }), stripeWebhookRoutes);
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.use(cookieParser());
 
 
