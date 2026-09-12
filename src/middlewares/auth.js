@@ -1,5 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import rateLimit from "express-rate-limit";
+
 
 export const protect = async (req, res, next) => {
   try {
@@ -87,3 +89,13 @@ export const socketAuth = (socket, next) => {
     next(new Error("INVALID_TOKEN"));
   }
 };
+
+
+
+export const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 دقيقة
+  max: 7,
+  message: { message: "Too many attempts, try again later.", type: "error" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

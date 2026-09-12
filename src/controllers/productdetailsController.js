@@ -95,87 +95,98 @@ export const addProductReview = async (req, res) => {
   try {
     const { id } = req.params;
     const { rating, comment } = req.body;
+console.log(1);
 
-    const numericRating = Number(rating);
+const numericRating = Number(rating);
+console.log(2);
 
-    if (
-      !Number.isFinite(numericRating) ||
-      numericRating < 1 ||
-      numericRating > 5
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Rating must be between 1 and 5.",
-      });
-    }
+if (
+  !Number.isFinite(numericRating) ||
+  numericRating < 1 ||
+  numericRating > 5
+) {
+  return res.status(400).json({
+    success: false,
+    message: "Rating must be between 1 and 5.",
+  });
+}
+console.log(3);
 
-    const cleanComment = comment?.trim();
+const cleanComment = comment?.trim();
 
-    if (!cleanComment) {
-      return res.status(400).json({
-        success: false,
-        message: "Comment is required.",
-      });
-    }
-    const userId = req.user?.id;
+if (!cleanComment) {
+  return res.status(400).json({
+    success: false,
+    message: "Comment is required.",
+  });
+}
+console.log(4);
+const userId = req.user?.id;
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "You must be logged in to review.",
-      });
-    }
-    const currentUser = await User.findById(userId).select("name");
-    if (!currentUser) {
-      return res.status(404).json({ success: false, message: "User not found." });
-    }
-    const product = await Product.findById(id);
+if (!userId) {
+  return res.status(401).json({
+    success: false,
+    message: "You must be logged in to review.",
+  });
+}
+console.log(5);
+const currentUser = await User.findById(userId).select("name");
+if (!currentUser) {
+  return res.status(404).json({ success: false, message: "User not found." });
+}
+console.log(6);
+const product = await Product.findById(id);
 
-    if (!product || !product.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found.",
-      });
-    }
+if (!product || !product.isActive) {
+  return res.status(404).json({
+    success: false,
+    message: "Product not found.",
+  });
+}
+console.log(7);
 
-    const existingReview = product.reviews.find(
-      (review) =>
-        review.user?.toString() === userId.toString()
-    );
+const existingReview = product.reviews.find(
+  (review) =>
+    review.user?.toString() === userId.toString()
+);
+console.log(8);
 
-    if (existingReview) {
-      existingReview.rating = numericRating;
-      existingReview.comment = cleanComment;
-      existingReview.updatedAt = new Date();
-    } else {
-      product.reviews.push({
-        user: userId,
-        name: currentUser.name,
-        rating: numericRating,
-        comment: cleanComment,
-      });
-    }
+if (existingReview) {
+  existingReview.rating = numericRating;
+  existingReview.comment = cleanComment;
+  existingReview.updatedAt = new Date();
+} else {
+  product.reviews.push({
+    user: userId,
+    name: currentUser.name,
+    rating: numericRating,
+    comment: cleanComment,
+  });
+}
+console.log(8);
 
-    product.numReviews = product.reviews.length;
+product.numReviews = product.reviews.length;
 
-    const totalRating = product.reviews.reduce(
-      (total, review) =>
-        total + Number(review.rating || 0),
-      0
-    );
+const totalRating = product.reviews.reduce(
+  (total, review) =>
+    total + Number(review.rating || 0),
+  0
+);
 
-    product.rating =
-      product.numReviews > 0
-        ? Number(
-          (totalRating / product.numReviews).toFixed(1)
-        )
-        : 0;
+console.log(9);
+product.rating =
+product.numReviews > 0
+? Number(
+  (totalRating / product.numReviews).toFixed(1)
+)
+: 0;
 
-    await product.save();
+console.log(10);
+await product.save();
 
-    // Clear caches
-    await Promise.all([
-      redis.del(`product:${id}`),
+// Clear caches
+await Promise.all([
+  redis.del(`product:${id}`),
       redis.del(`product-details:${id}`),
     ]);
 

@@ -1,12 +1,12 @@
 import express from "express";
 import { getUser, login, refresh, register } from "../controllers/authController.js";
-import { optionalAuthMiddleware, protect } from "../middlewares/auth.js";
+import { authLimiter, optionalAuthMiddleware, protect } from "../middlewares/auth.js";
 import Subscription from "../models/Subscription.js";
 const router = express.Router();
 
-router.post("/register", register);
+router.post("/register",authLimiter, register);
 
-router.post("/login", login);
+router.post("/login", authLimiter, login);
 
 router.get("/user", optionalAuthMiddleware, getUser);
 
