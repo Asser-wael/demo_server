@@ -5,6 +5,8 @@ import redis from "../config/redis.js";
 import { clearProductCache as clearCache } from "../utils/cache.js";
 
 
+const PRODUCTS_KEY = "products:all";
+const LATEST_KEY = "products:latest";
 
 const uploadImage = (file) => {
   return new Promise((resolve, reject) => {
