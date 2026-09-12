@@ -2,6 +2,8 @@ import webpush from "../config/webpush.js";
 import Subscription from "../models/Subscription.js";
 
 const sendPushToSubscriptions = async (subs, payload) => {
+    
+    console.log(2);
     const results = await Promise.allSettled(
         subs.map((sub) =>
             webpush.sendNotification(
@@ -10,7 +12,8 @@ const sendPushToSubscriptions = async (subs, payload) => {
             )
         )
     );
-
+    
+    console.log(3);
     results.forEach((r, i) => {
         if (r.status === "rejected" && [404, 410].includes(r.reason?.statusCode)) {
             Subscription.deleteOne({ _id: subs[i]._id }).exec();
@@ -26,6 +29,9 @@ export const sendPushToAdmins = async (payload) => {
 
 // ليوزر معين (كل أجهزته)
 export const sendPushToUser = async (userId, payload) => {
+    console.log(1);
+    
     const subs = await Subscription.find({ user: userId });
+    console.log(subs);
     await sendPushToSubscriptions(subs, payload);
 };
