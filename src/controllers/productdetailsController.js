@@ -1,5 +1,6 @@
 import Product from "../models/Product.js";
 import redis from "../config/redis.js";
+import User from "../models/User.js";
 
 // Get product details
 export const getProductDetails = async (req, res) => {
@@ -95,10 +96,8 @@ export const addProductReview = async (req, res) => {
   try {
     const { id } = req.params;
     const { rating, comment } = req.body;
-console.log(1);
 
 const numericRating = Number(rating);
-console.log(2);
 
 if (
   !Number.isFinite(numericRating) ||
@@ -110,7 +109,6 @@ if (
     message: "Rating must be between 1 and 5.",
   });
 }
-console.log(3);
 
 const cleanComment = comment?.trim();
 
@@ -120,7 +118,6 @@ if (!cleanComment) {
     message: "Comment is required.",
   });
 }
-console.log(4);
 const userId = req.user?.id;
 
 if (!userId) {
@@ -129,14 +126,11 @@ if (!userId) {
     message: "You must be logged in to review.",
   });
 }
-console.log(req.user?.id);
 const currentUser = await User.findById(userId).select("name");
-console.log(currentUser);
 
 if (!currentUser) {
   return res.status(404).json({ success: false, message: "User not found." });
 }
-console.log(6);
 const product = await Product.findById(id);
 
 if (!product || !product.isActive) {
@@ -145,13 +139,11 @@ if (!product || !product.isActive) {
     message: "Product not found.",
   });
 }
-console.log(7);
 
 const existingReview = product.reviews.find(
   (review) =>
     review.user?.toString() === userId.toString()
 );
-console.log(8);
 
 if (existingReview) {
   existingReview.rating = numericRating;
@@ -165,7 +157,6 @@ if (existingReview) {
     comment: cleanComment,
   });
 }
-console.log(8);
 
 product.numReviews = product.reviews.length;
 
