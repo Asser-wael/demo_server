@@ -129,7 +129,7 @@ if (!userId) {
     message: "You must be logged in to review.",
   });
 }
-console.log(5);
+console.log(req.user?.id);
 const currentUser = await User.findById(userId).select("name");
 if (!currentUser) {
   return res.status(404).json({ success: false, message: "User not found." });
