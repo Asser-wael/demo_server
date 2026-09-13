@@ -385,30 +385,54 @@ export const deleteUserNotification = async (req, res) => {
 
 // POST /notifications/subscribe
 export const saveSubscription = async (req, res) => {
- try {
-    const { subscription } = req.body;
+    try {
+        const { subscription } = req.body;
 
-    if (!subscription?.endpoint || !subscription?.keys) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid subscription payload",
-      });
+        const user = await User.findById(req.user.id)
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        if (!subscription?.endpoint || !subscription?.keys) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid subscription",
+            });
+        }
+
+        await Subscription.findOneAndUpdate(
+            {
+                endpoint: subscription.endpoint,
+            },
+            {
+                user: req.user.id,
+                role: user.role == "admin" ? "admin" : "user",
+                endpoint: subscription.endpoint,
+                keys: subscription.keys,
+            },
+            {
+                upsert: true,
+                new: true,
+                setDefaultsOnInsert: true,
+            }
+        );
+
+        return res.json({
+            success: true,
+            message: "Push subscribed successfully",
+            type: "success",
+        });
+    } catch (error) {
+        console.error("Subscribe Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+            type: "error",
+        });
     }
-
-    // upsert on endpoint (unique per browser)
-    await Subscription.findOneAndUpdate(
-      { endpoint: subscription.endpoint },
-      {
-        user: req.user.id,
-        endpoint: subscription.endpoint,
-        keys: subscription.keys,
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    return res.json({ success: true, message: "Subscribed" });
-  } catch (error) {
-    console.error("Subscribe error:", error);
-    return res.status(500).json({ success: false, message: error.message });
-  }
-}
+};
