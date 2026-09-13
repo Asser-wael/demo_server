@@ -14,6 +14,7 @@ export const getCart = async (req, res) => {
 
     await user.populate("cart.product", "name image variants");
 
+    // Remove items whose referenced products no longer exist
     user.cart = user.cart.filter((item) => item.product);
 
     await user.save();
@@ -29,201 +30,202 @@ export const getCart = async (req, res) => {
     });
   }
 };
+
 // POST /cart/add
 export const addToCart = async (req, res) => {
-    try {
-        const { productId, color, size, quantity } = req.body;
+  try {
+    const { productId, color, size, quantity } = req.body;
 
-        const product = await Product.findById(productId);
+    const product = await Product.findById(productId);
 
-        if (!product)
-            return res.status(404).json({ message: "المنتج غير موجود" });
+    if (!product)
+      return res.status(404).json({ message: "Product not found" });
 
-        const variant = product.variants.find(
-            (v) => v.color.name === color
-        );
+    const variant = product.variants.find(
+      (v) => v.color.name === color
+    );
 
-        if (!variant)
-            return res.status(400).json({ message: "اللون غير موجود" });
+    if (!variant)
+      return res.status(400).json({ message: "Color not found" });
 
-        const sizeObj = variant.sizes.find((s) => s.size === size);
+    const sizeObj = variant.sizes.find((s) => s.size === size);
 
-        if (!sizeObj)
-            return res.status(400).json({ message: "المقاس غير موجود" });
+    if (!sizeObj)
+      return res.status(400).json({ message: "Size not found" });
 
-        const qty = quantity || 1;
+    const qty = quantity || 1;
 
-        if (sizeObj.stock < qty)
-            return res.status(400).json({ message: "الكمية غير متوفرة" });
+    if (sizeObj.stock < qty)
+      return res.status(400).json({ message: "Requested quantity is not available" });
 
-        const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user.id);
 
-        const existingItem = user.cart.find(
-            (item) =>
-                item.product.toString() === productId &&
-                item.color === color &&
-                item.size === size
-        );
+    const existingItem = user.cart.find(
+      (item) =>
+        item.product.toString() === productId &&
+        item.color === color &&
+        item.size === size
+    );
 
-        if (existingItem) {
-            const newQty = existingItem.quantity + qty;
+    if (existingItem) {
+      const newQty = existingItem.quantity + qty;
 
-            if (sizeObj.stock < newQty)
-                return res
-                    .status(400)
-                    .json({ message: "الكمية غير متوفرة" });
+      if (sizeObj.stock < newQty)
+        return res
+          .status(400)
+          .json({ message: "Requested quantity exceeds available stock" });
 
-            existingItem.quantity = newQty;
-        } else {
-            user.cart.push({
-                product: productId,
-                color,
-                size,
-                quantity: qty,
-            });
-        }
-
-        await user.save();
-
-        const populatedUser = await user.populate(
-            "cart.product",
-            "name image variants"
-        );
-
-        res.status(200).json({
-            success: true,
-            message: "تمت الإضافة إلى السلة",
-            cart: populatedUser.cart,
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: error.message,
-        });
+      existingItem.quantity = newQty;
+    } else {
+      user.cart.push({
+        product: productId,
+        color,
+        size,
+        quantity: qty,
+      });
     }
+
+    await user.save();
+
+    const populatedUser = await user.populate(
+      "cart.product",
+      "name image variants"
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Added to cart successfully",
+      cart: populatedUser.cart,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 };
 
 // PUT /cart/update
 export const updateCartItem = async (req, res) => {
-    try {
-        const { productId, color, size, quantity } = req.body;
+  try {
+    const { productId, color, size, quantity } = req.body;
 
-        if (quantity < 1)
-            return res
-                .status(400)
-                .json({ message: "الكمية يجب أن تكون أكبر من صفر" });
+    if (quantity < 1)
+      return res
+        .status(400)
+        .json({ message: "Quantity must be greater than zero" });
 
-        const product = await Product.findById(productId);
+    const product = await Product.findById(productId);
 
-        if (!product)
-            return res.status(404).json({ message: "المنتج غير موجود" });
+    if (!product)
+      return res.status(404).json({ message: "Product not found" });
 
-        const variant = product.variants.find(
-            (v) => v.color.name === color
-        );
-        const sizeObj = variant?.sizes.find((s) => s.size === size);
+    const variant = product.variants.find(
+      (v) => v.color.name === color
+    );
+    const sizeObj = variant?.sizes.find((s) => s.size === size);
 
-        if (!sizeObj)
-            return res.status(400).json({ message: "المقاس غير موجود" });
+    if (!sizeObj)
+      return res.status(400).json({ message: "Size not found" });
 
-        if (sizeObj.stock < quantity)
-            return res.status(400).json({ message: "الكمية غير متوفرة" });
+    if (sizeObj.stock < quantity)
+      return res.status(400).json({ message: "Requested quantity is not available" });
 
-        const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user.id);
 
-        const item = user.cart.find(
-            (item) =>
-                item.product.toString() === productId &&
-                item.color === color &&
-                item.size === size
-        );
+    const item = user.cart.find(
+      (item) =>
+        item.product.toString() === productId &&
+        item.color === color &&
+        item.size === size
+    );
 
-        if (!item)
-            return res
-                .status(404)
-                .json({ message: "المنتج غير موجود في السلة" });
+    if (!item)
+      return res
+        .status(404)
+        .json({ message: "Item not found in cart" });
 
-        item.quantity = quantity;
+    item.quantity = quantity;
 
-        await user.save();
+    await user.save();
 
-        const populatedUser = await user.populate(
-            "cart.product",
-            "name image variants"
-        );
+    const populatedUser = await user.populate(
+      "cart.product",
+      "name image variants"
+    );
 
-        res.status(200).json({
-            success: true,
-            message: "تم تحديث السلة",
-            cart: populatedUser.cart,
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: error.message,
-        });
-    }
+    res.status(200).json({
+      success: true,
+      message: "Cart updated successfully",
+      cart: populatedUser.cart,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 };
 
 // DELETE /cart/remove
 export const removeFromCart = async (req, res) => {
-    try {
-        const { productId, color, size } = req.body;
+  try {
+    const { productId, color, size } = req.body;
 
-        const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user.id);
 
-        if (!user)
-            return res.status(404).json({ message: "المستخدم غير موجود" });
+    if (!user)
+      return res.status(404).json({ message: "User not found" });
 
-        user.cart = user.cart.filter(
-            (item) =>
-                !(
-                    item.product.toString() === productId &&
-                    item.color === color &&
-                    item.size === size
-                )
-        );
+    user.cart = user.cart.filter(
+      (item) =>
+        !(
+          item.product.toString() === productId &&
+          item.color === color &&
+          item.size === size
+        )
+    );
 
-        await user.save();
+    await user.save();
 
-        const populatedUser = await user.populate(
-            "cart.product",
-            "name image variants"
-        );
+    const populatedUser = await user.populate(
+      "cart.product",
+      "name image variants"
+    );
 
-        res.status(200).json({
-            success: true,
-            message: "تم حذف المنتج من السلة",
-            cart: populatedUser.cart,
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: error.message,
-        });
-    }
+    res.status(200).json({
+      success: true,
+      message: "Item removed from cart",
+      cart: populatedUser.cart,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 };
 
 // DELETE /cart/clear
 export const clearCart = async (req, res) => {
-    try {
-        const user = await User.findById(req.user.id);
+  try {
+    const user = await User.findById(req.user.id);
 
-        if (!user)
-            return res.status(404).json({ message: "المستخدم غير موجود" });
+    if (!user)
+      return res.status(404).json({ message: "User not found" });
 
-        user.cart = [];
-        await user.save();
+    user.cart = [];
+    await user.save();
 
-        res.status(200).json({
-            success: true,
-            message: "تم تفريغ السلة",
-            cart: [],
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: error.message,
-        });
-    }
+    res.status(200).json({
+      success: true,
+      message: "Cart cleared successfully",
+      cart: [],
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 };
