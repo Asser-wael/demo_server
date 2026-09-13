@@ -3,7 +3,6 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 
 import dashboardRoutes from "./routes/dashboardRoutes.js";
