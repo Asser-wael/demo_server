@@ -559,10 +559,11 @@ export const changeStatus = async (req, res) => {
             },
         };
 
+        // 🔔 إرسال الحدث إلى غرفة الطلب بناءً على ID الطلب
         const currentStatusConfig = statusMessages[status] || statusMessages.pending;
 
-        // 🔔 إرسال الحدث إلى غرفة الطلب بناءً على ID الطلب
-        io.to(order._id.toString()).emit("orderStatus", {
+        // ✅ FIX 1: use the same room name as the join logic
+        io.to(`userOrder-${order._id}`).emit("orderStatus", {
             orderId: order._id,
             status,
             orderCode,
@@ -570,11 +571,11 @@ export const changeStatus = async (req, res) => {
             body: currentStatusConfig.body,
         });
 
-        // Push Notifications & DB Notifications
-        await sendPushToUser({userId: order.user, payload :{
+        // ✅ FIX 2: sendPushToUser takes (userId, payload) — NOT an object
+        await sendPushToUser(order.user, {
             title: currentStatusConfig.title,
             body: currentStatusConfig.body,
-        }});
+        });
 
         await createNotificationUser({
             user: order.user,
@@ -624,10 +625,9 @@ export const deleteOrder = async (req, res) => {
 
         await order.deleteOne();
 
-        const io = getIO();
 
-        // 🔔 إرسال حدث الحذف
-        io.to(order._id.toString()).emit("orderDeleted", {
+        // ✅ FIX: same room name
+        io.to(`userOrder-${order._id}`).emit("orderDeleted", {
             orderId: order._id,
         });
 

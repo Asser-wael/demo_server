@@ -35,9 +35,8 @@ const initSocket = (server) => {
         return next(new Error("Invalid token"));
       }
 
-      // Only trust the id from the token — role is fetched fresh below,
-      // same as the HTTP adminMiddleware does.
-      socket.user = { id: decoded.id };
+      // Only trust the id from the token — role is fetched fresh below
+      socket.user = { id: decoded.id || decoded.userId || decoded._id };
 
       next();
     } catch (error) {
@@ -88,10 +87,6 @@ const initSocket = (server) => {
         if (!socket.user) return;
         if (!idOrder) return;
 
-        // Verify this order actually belongs to the connected user before
-        // subscribing them — otherwise any authenticated user could join
-        // `userOrder-<anyId>` for an order that isn't theirs and receive
-        // its real-time status updates.
         const order = await Order.findById(idOrder).select("user");
 
         if (!order || order.user.toString() !== socket.user.id) {
@@ -99,6 +94,7 @@ const initSocket = (server) => {
           return;
         }
 
+        // ✅ IMPORTANT: same room name used by orderController
         const room = `userOrder-${idOrder}`;
         socket.join(room);
 
