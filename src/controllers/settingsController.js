@@ -14,6 +14,7 @@ export const updateSettings = async (req, res, next) => {
   try {
     const settings = await Settings.getSingleton();
     const { theme, colors, company, social, phone } = req.body;
+console.log(theme, colors, company, social, phone);
 
     if (theme === "light" || theme === "dark") {
       settings.theme = theme;
