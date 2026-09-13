@@ -163,6 +163,7 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import Order from "../models/Order.js";
 
 let io;
 
@@ -244,10 +245,21 @@ const initSocket = (server) => {
     // ==========================================
     // USER ORDER ROOM
     // ==========================================
-    socket.on("userOrder", (idOrder) => {
+    socket.on("userOrder", async (idOrder) => {
       try {
         if (!socket.user) return;
         if (!idOrder) return;
+
+        // Verify this order actually belongs to the connected user before
+        // subscribing them — otherwise any authenticated user could join
+        // `userOrder-<anyId>` for an order that isn't theirs and receive
+        // its real-time status updates.
+        const order = await Order.findById(idOrder).select("user");
+
+        if (!order || order.user.toString() !== socket.user.id) {
+          console.log(`Unauthorized userOrder room attempt: ${socket.id}`);
+          return;
+        }
 
         const room = `userOrder-${idOrder}`;
         socket.join(room);

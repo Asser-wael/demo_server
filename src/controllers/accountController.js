@@ -20,18 +20,26 @@ export const updateProfile = async (req, res) => {
   try {
     const { name, email, avatar } = req.body;
 
+    if (email !== undefined && typeof email !== "string") {
+      return res.status(400).json({ message: "Invalid email", type: "error" });
+    }
+
     const user = await UserModel.findById(req.user.id);
 
     if (!user) {
       return res.status(404).json({ message: "User not found", type: "error" });
     }
 
-    if (email && email !== user.email) {
-      const emailExists = await UserModel.findOne({ email });
-      if (emailExists) {
-        return res.status(400).json({ message: "Email already in use", type: "error" });
+    if (email) {
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (normalizedEmail !== user.email) {
+        const emailExists = await UserModel.findOne({ email: normalizedEmail });
+        if (emailExists) {
+          return res.status(400).json({ message: "Email already in use", type: "error" });
+        }
+        user.email = normalizedEmail;
       }
-      user.email = email;
     }
 
     if (name) user.name = name;
@@ -44,6 +52,9 @@ export const updateProfile = async (req, res) => {
 
     res.json({ user: userSafe, message: "Profile updated", type: "success" });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Email already in use", type: "error" });
+    }
     console.log(error);
     res.status(500).json({ message: "Server error", type: "error" });
   }
@@ -57,7 +68,10 @@ export const changePassword = async (req, res) => {
       return res.status(400).json({ message: "Password too short", type: "error" });
     }
 
-    const user = await UserModel.findById(req.user.id);
+    // password has `select: false` in the schema, so it must be explicitly
+    // requested here — without this, matchPassword always compares against
+    // `undefined` and this endpoint can never succeed.
+    const user = await UserModel.findById(req.user.id).select("+password");
 
     if (!user) {
       return res.status(404).json({ message: "User not found", type: "error" });

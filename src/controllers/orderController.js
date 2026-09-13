@@ -1,3 +1,4 @@
+import axios from "axios";
 import streamifier from "streamifier";
 import cloudinary from "../config/cloudinary.js";
 import User from "../models/User.js";
@@ -114,24 +115,81 @@ export const checkout = async (req, res) => {
         }
 
         // --------------------------------------------------------
-        // Update stock & notify if low stock
+        // Update stock atomically & notify if low stock
         // --------------------------------------------------------
+        // Stock is decremented with a single conditional update per item
+        // (stock only decreases if enough is still available at the moment
+        // of the write). This prevents two concurrent checkouts from both
+        // passing the earlier in-memory check and overselling the same
+        // stock. If any item fails (lost the race / went out of stock),
+        // every previously-applied decrement in this checkout is rolled
+        // back and the whole checkout is rejected — no partial orders.
         const touchedProductIds = new Set();
+        const appliedStockUpdates = [];
+
+        const rollbackAppliedStockUpdates = async () => {
+            for (const applied of appliedStockUpdates) {
+                try {
+                    await Product.updateOne(
+                        { _id: applied.productId },
+                        { $inc: { "variants.$[v].sizes.$[s].stock": applied.quantity } },
+                        {
+                            arrayFilters: [
+                                { "v.color.name": applied.color },
+                                { "s.size": applied.size },
+                            ],
+                        }
+                    );
+                } catch (rollbackErr) {
+                    console.error("Stock rollback failed:", rollbackErr.message);
+                }
+            }
+        };
 
         for (const item of productsToUpdate) {
             const { product, variant, size, quantity } = item;
 
-            size.stock -= quantity;
+            const decrementResult = await Product.updateOne(
+                { _id: product._id },
+                { $inc: { "variants.$[v].sizes.$[s].stock": -quantity } },
+                {
+                    arrayFilters: [
+                        { "v.color.name": variant.color.name },
+                        { "s.size": size.size, "s.stock": { $gte: quantity } },
+                    ],
+                }
+            );
 
-            // Low stock check wrapped safely
-            if (size.stock <= 3) {
-                const lowStockMessage = `Low Stock Warning: "${product.name}" (${variant.color.name} / ${size.size}) has only ${size.stock} left in stock!`;
+            if (decrementResult.modifiedCount !== 1) {
+                // Someone else took the remaining stock in the meantime.
+                await rollbackAppliedStockUpdates();
+
+                return res.status(409).json({
+                    success: false,
+                    message: `${product.name} (${variant.color.name} / ${size.size}) is no longer available in the requested quantity`,
+                });
+            }
+
+            appliedStockUpdates.push({
+                productId: product._id,
+                color: variant.color.name,
+                size: size.size,
+                quantity,
+            });
+            touchedProductIds.add(product._id.toString());
+
+            // Low stock check — based on the stock we just observed locally;
+            // it's only used for the informational admin alert, not for any
+            // stock decision, so approximate freshness here is fine.
+            const remainingStock = size.stock - quantity;
+            if (remainingStock <= 3) {
+                const lowStockMessage = `Low Stock Warning: "${product.name}" (${variant.color.name} / ${size.size}) has only ${remainingStock} left in stock!`;
 
                 try {
                     io.to("adminroom").emit("warning", {
                         id: product._id,
                         name: product.name,
-                        stock: size.stock,
+                        stock: remainingStock,
                         size: size.size,
                         color: variant.color.name,
                     });
@@ -150,9 +208,6 @@ export const checkout = async (req, res) => {
                     console.error("Failed to send low-stock notifications:", notiError.message);
                 }
             }
-
-            await product.save();
-            touchedProductIds.add(product._id.toString());
         }
 
         // Clear Redis cache safely
@@ -168,27 +223,35 @@ export const checkout = async (req, res) => {
         // --------------------------------------------------------
         // Create Order
         // --------------------------------------------------------
-        const order = await Order.create({
-            user: user._id,
-            items: orderItems,
-            shippingAddress: {
-                fullName,
-                phone,
-                city,
-                address,
-            },
-            paymentMethod,
-            walletPayment:
-                paymentMethod === "wallet"
-                    ? {
-                        senderName,
-                        senderPhone,
-                        transactionId,
-                        transferImage: imageUrl,
-                    }
-                    : undefined,
-            totalPrice,
-        });
+        let order;
+        try {
+            order = await Order.create({
+                user: user._id,
+                items: orderItems,
+                shippingAddress: {
+                    fullName,
+                    phone,
+                    city,
+                    address,
+                },
+                paymentMethod,
+                walletPayment:
+                    paymentMethod === "wallet"
+                        ? {
+                            senderName,
+                            senderPhone,
+                            transactionId,
+                            transferImage: imageUrl,
+                        }
+                        : undefined,
+                totalPrice,
+            });
+        } catch (orderCreateError) {
+            // The order was never created — give back the stock we already
+            // reserved above so it isn't lost.
+            await rollbackAppliedStockUpdates();
+            throw orderCreateError;
+        }
 
         // -------------------------------------------------------- 
         // TRIGGER N8N WORKFLOW (IF WALLET PAYMENT)

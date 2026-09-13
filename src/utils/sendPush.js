@@ -1,5 +1,6 @@
 import webpush from "../config/webpush.js";
 import Subscription from "../models/Subscription.js";
+import User from "../models/User.js";
 
 const sendPushToSubscriptions = async (subs, payload) => {
     const results = await Promise.allSettled(
@@ -19,8 +20,15 @@ const sendPushToSubscriptions = async (subs, payload) => {
 };
 
 // لكل الأدمنز
+// Look up who is currently an admin instead of trusting the `role` snapshot
+// stored on the subscription at subscribe-time — otherwise a user who is
+// demoted from admin keeps receiving admin push notifications until they
+// happen to resubscribe.
 export const sendPushToAdmins = async (payload) => {
-    const subs = await Subscription.find({ role: "admin" });
+    const admins = await User.find({ role: "admin" }).select("_id");
+    const adminIds = admins.map((admin) => admin._id);
+
+    const subs = await Subscription.find({ user: { $in: adminIds } });
     await sendPushToSubscriptions(subs, payload);
 };
 

@@ -11,11 +11,19 @@ export const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    if (!password || password.length < 6) {
+    if (typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({ message: "Email is required", type: "error" });
+    }
+
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ message: "Name is required", type: "error" });
+    }
+
+    if (typeof password !== "string" || password.length < 6) {
       return res.status(400).json({ message: "Password too short", type: "error" });
     }
 
-    const normalizedEmail = email?.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
 
     const exist = await UserModel.findOne({ email: normalizedEmail });
     if (exist) {
@@ -32,6 +40,13 @@ export const register = async (req, res) => {
 
     res.status(201).json({ message: "Registered", type: "success" });
   } catch (error) {
+    // Two concurrent registrations for the same email can both pass the
+    // findOne check above; the unique index on email is what actually
+    // prevents the duplicate, and it surfaces here as a duplicate-key error.
+    if (error.code === 11000) {
+      return res.status(409).json({ message: "User exists!", type: "error" });
+    }
+
     console.log(error);
     res.status(500).json({ message: "Server error", type: "error" }); // ✅ لازم ترجع response
   }
@@ -40,7 +55,16 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await UserModel.findOne({ email }).select("+password");
+    // Reject anything that isn't a plain string before it reaches a Mongo
+    // query — otherwise a body like { "email": { "$ne": null } } would be
+    // passed straight into findOne() as a query operator.
+    if (typeof email !== "string" || typeof password !== "string") {
+      return res.status(400).json({ message: "Invalid credentials", type: "error" });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await UserModel.findOne({ email: normalizedEmail }).select("+password");
 
     if (!user) {
       return res.status(400).json({ message: "User doesn't exist!", type: "error" });

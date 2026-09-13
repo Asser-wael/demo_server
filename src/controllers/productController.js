@@ -1,12 +1,35 @@
 import streamifier from "streamifier";
 import cloudinary from "../config/cloudinary.js";
 import Product from "../models/Product.js";
+import User from "../models/User.js";
 import redis from "../config/redis.js";
 import { clearProductCache as clearCache } from "../utils/cache.js";
 
 
 const PRODUCTS_KEY = "products:all";
 const LATEST_KEY = "products:latest";
+
+// The token only carries { id }, never role, so admin status always needs a
+// DB lookup — this is intentionally the same pattern adminMiddleware uses.
+const isAdminRequest = async (req) => {
+  const userId = req.user?.id;
+  if (!userId) return false;
+  const user = await User.findById(userId).select("role");
+  return user?.role === "admin";
+};
+
+// costPrice is internal margin data — it must never reach a public/customer
+// response, only the admin product-management views.
+const stripCostPrice = (product) => {
+  const obj = typeof product.toObject === "function" ? product.toObject() : product;
+  return {
+    ...obj,
+    variants: (obj.variants || []).map((variant) => ({
+      ...variant,
+      sizes: (variant.sizes || []).map(({ costPrice, ...rest }) => rest),
+    })),
+  };
+};
 
 const uploadImage = (file) => {
   return new Promise((resolve, reject) => {
@@ -168,9 +191,25 @@ export const deleteProduct = async (req, res) => {
 };
 
 // Get all products
+// Shared by the public store (isActive-only, no costPrice) and the admin
+// product-management page (everything, unfiltered) — the admin panel
+// fetches this exact endpoint to list/manage all products, including
+// inactive ones, so the split has to happen here rather than by adding a
+// separate route.
 export const getProducts = async (req, res) => {
   try {
-    console.log(1);
+    const admin = await isAdminRequest(req);
+
+    if (admin) {
+      const products = await Product.find().populate("category", "name");
+
+      return res.status(200).json({
+        success: true,
+        products,
+        fromCache: false,
+      });
+    }
+
     const cached = await redis.get(PRODUCTS_KEY);
 
     if (cached) {
@@ -181,18 +220,20 @@ export const getProducts = async (req, res) => {
       });
     }
 
-    const products = await Product.find()
+    const products = await Product.find({ isActive: true })
       .populate("category", "name");
+
+    const publicProducts = products.map(stripCostPrice);
 
     await redis.setEx(
       PRODUCTS_KEY,
       300,
-      JSON.stringify(products)
+      JSON.stringify(publicProducts)
     );
 
     return res.status(200).json({
       success: true,
-      products,
+      products: publicProducts,
       fromCache: false,
     });
   } catch (error) {
@@ -221,21 +262,23 @@ export const getLatestProducts = async (req, res) => {
       });
     }
 
-    const products = await Product.find()
+    const products = await Product.find({ isActive: true })
       .sort({ createdAt: -1 })
       .limit(5)
       .populate("category", "name");
 
+    const publicProducts = products.map(stripCostPrice);
+
     await redis.setEx(
       LATEST_KEY,
       300,
-      JSON.stringify(products)
+      JSON.stringify(publicProducts)
     );
 
     return res.status(200).json({
       success: true,
-      count: products.length,
-      products,
+      count: publicProducts.length,
+      products: publicProducts,
       fromCache: false,
     });
   } catch (error) {
@@ -275,15 +318,17 @@ export const getProduct = async (req, res) => {
       });
     }
 
+    const publicProduct = stripCostPrice(product);
+
     await redis.setEx(
       cacheKey,
       300,
-      JSON.stringify(product)
+      JSON.stringify(publicProduct)
     );
 
     return res.status(200).json({
       success: true,
-      product,
+      product: publicProduct,
       fromCache: false,
     });
   } catch (error) {

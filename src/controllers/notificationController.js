@@ -36,7 +36,6 @@ export const getNotifications = async (req, res) => {
 // GET /notifications/user
 export const getNotificationUser = async (req, res) => {
     try {
-        console.log(1);
         const userId = req.user?.id;
 
         if (!userId) {
@@ -388,18 +387,23 @@ export const deleteUserNotification = async (req, res) => {
 export const saveSubscription = async (req, res) => {
     try {
         const { subscription } = req.body;
-        console.log(req.body);
-        
+
         const user = await User.findById(req.user.id)
-        
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
         if (!subscription?.endpoint || !subscription?.keys) {
             return res.status(400).json({
                 success: false,
                 message: "Invalid subscription",
             });
         }
-        console.log(2);
-        
+
         await Subscription.findOneAndUpdate(
             {
                 endpoint: subscription.endpoint,
@@ -416,8 +420,7 @@ export const saveSubscription = async (req, res) => {
                 setDefaultsOnInsert: true,
             }
         );
-        
-        console.log(3);
+
         return res.json({
             success: true,
             message: "Push subscribed successfully",

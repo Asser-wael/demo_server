@@ -5,13 +5,13 @@ import {
   changePassword,
   deleteAccount,
 } from "../controllers/accountController.js";
-import { protect } from "../middlewares/auth.js";
+import { protect, sensitiveActionLimiter } from "../middlewares/auth.js";
 
 const router = express.Router();
 
 router.get("/", protect, getProfile);
 router.put("/", protect, updateProfile);
-router.put("/password", protect, changePassword);
-router.delete("/", protect, deleteAccount);
+router.put("/password", protect, sensitiveActionLimiter, changePassword);
+router.delete("/", protect, sensitiveActionLimiter, deleteAccount);
 
 export default router;

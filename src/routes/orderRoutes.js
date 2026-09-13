@@ -26,10 +26,13 @@ const router = express.Router();
 // ============================================================
 
 // Checkout
+// `protect` runs before the upload parses the request body, so an
+// unauthenticated request is rejected before the server spends any work
+// parsing/buffering an uploaded file.
 router.post(
     "/checkout",
-    upload.single("image"),
     protect,
+    upload.single("image"),
     checkout
 );
 
