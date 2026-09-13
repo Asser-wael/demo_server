@@ -15,6 +15,7 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import accountRoutes from "./routes/accountRoutes.js";
 import stripeRoutes from "./routes/stripeRoutes.js";
 import stripeWebhookRoutes from "./routes/stripeWebhookRoutes.js";
+import settingsRoutes from "./routes/settingsRoutes.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
 const app = express();
@@ -46,7 +47,6 @@ app.get("/", (req, res) => {
 
 
 
-
 app.use("/api/admin/dashboard", dashboardRoutes);
 app.use("/api/notifications", notificationRoutes);
 
@@ -61,6 +61,7 @@ app.use("/api/popular", popularRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/trust", trustRoutes);
+app.use("/api/settings", settingsRoutes);
 
 app.use(errorHandler);
 
