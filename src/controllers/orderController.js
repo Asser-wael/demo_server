@@ -284,11 +284,11 @@ export const checkout = async (req, res) => {
 
             // Admin Notification Message (Shopify Merchant Style)
             const adminPushTitle = `New Order #${orderCode}`;
-            const adminPushBody = `${itemCount} item(s) • Total: ${totalPrice} EGP (${paymentLabel}), ${fullName} placed an order`;
+            const adminPushBody = `${itemCount} item(s) • Total: NZ$${totalPrice} (${paymentLabel}), ${fullName} placed an order`;
 
             // User Notification Message (Shopify Customer Style)
             const userPushTitle = `🎉 Order Confirmed! #${orderCode}`;
-            const userPushBody = `Thank you for your order! We've received your payment request of ${totalPrice} EGP and are processing it now.`;
+            const userPushBody = `Thank you for your order! We've received your payment request of NZ$${totalPrice} and are processing it now.`;
 
             // Realtime WebSockets Emit to Admin Room
             io.to("adminroom").emit("newOrder", {
