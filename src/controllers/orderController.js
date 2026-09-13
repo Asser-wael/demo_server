@@ -24,7 +24,6 @@ export const checkout = async (req, res) => {
 
         let imageUrl = "";
 
-        // Upload wallet transfer image if provided
         if (req.file) {
             const streamUpload = () =>
                 new Promise((resolve, reject) => {
@@ -58,7 +57,6 @@ export const checkout = async (req, res) => {
             return res.status(404).json({ success: false, message: "User not found" });
         }
 
-        // اقرأ الـ items من الريكوست بدل ما تعتمد على user.cart فقط
         const requestedItems = JSON.parse(items || "[]");
 
         if (!requestedItems.length) {
@@ -114,16 +112,6 @@ export const checkout = async (req, res) => {
             productsToUpdate.push({ product, variant, size, quantity: item.quantity });
         }
 
-        // --------------------------------------------------------
-        // Update stock atomically & notify if low stock
-        // --------------------------------------------------------
-        // Stock is decremented with a single conditional update per item
-        // (stock only decreases if enough is still available at the moment
-        // of the write). This prevents two concurrent checkouts from both
-        // passing the earlier in-memory check and overselling the same
-        // stock. If any item fails (lost the race / went out of stock),
-        // every previously-applied decrement in this checkout is rolled
-        // back and the whole checkout is rejected — no partial orders.
         const touchedProductIds = new Set();
         const appliedStockUpdates = [];
 
@@ -161,7 +149,6 @@ export const checkout = async (req, res) => {
             );
 
             if (decrementResult.modifiedCount !== 1) {
-                // Someone else took the remaining stock in the meantime.
                 await rollbackAppliedStockUpdates();
 
                 return res.status(409).json({
@@ -178,9 +165,6 @@ export const checkout = async (req, res) => {
             });
             touchedProductIds.add(product._id.toString());
 
-            // Low stock check — based on the stock we just observed locally;
-            // it's only used for the informational admin alert, not for any
-            // stock decision, so approximate freshness here is fine.
             const remainingStock = size.stock - quantity;
             if (remainingStock <= 3) {
                 const lowStockMessage = `Low Stock Warning: "${product.name}" (${variant.color.name} / ${size.size}) has only ${remainingStock} left in stock!`;
@@ -210,7 +194,6 @@ export const checkout = async (req, res) => {
             }
         }
 
-        // Clear Redis cache safely
         try {
             await redis.del("products:all");
             for (const productId of touchedProductIds) {
@@ -220,9 +203,6 @@ export const checkout = async (req, res) => {
             console.error("Redis Cache Clear Error:", redisErr.message);
         }
 
-        // --------------------------------------------------------
-        // Create Order
-        // --------------------------------------------------------
         let order;
         try {
             order = await Order.create({
@@ -247,15 +227,10 @@ export const checkout = async (req, res) => {
                 totalPrice,
             });
         } catch (orderCreateError) {
-            // The order was never created — give back the stock we already
-            // reserved above so it isn't lost.
             await rollbackAppliedStockUpdates();
             throw orderCreateError;
         }
 
-        // -------------------------------------------------------- 
-        // TRIGGER N8N WORKFLOW (IF WALLET PAYMENT)
-        // -------------------------------------------------------- 
         if (paymentMethod === "wallet" && imageUrl) {
             axios.post("https://asserwael.app.n8n.cloud/webhook-test/payment-verification", {
                 orderId: order._id,
@@ -270,27 +245,20 @@ export const checkout = async (req, res) => {
         }
 
         if (isBuyNow !== "true") user.cart = [];
-
         user.orders.push(order._id);
         await user.save();
 
-        // --------------------------------------------------------
-        // SHOPIFY-STYLE NOTIFICATION PAYLOADS (SAFE EXECUTION)
-        // --------------------------------------------------------
         try {
             const orderCode = order._id.toString().slice(-6).toUpperCase();
             const itemCount = orderItems.reduce((acc, curr) => acc + curr.quantity, 0);
             const paymentLabel = paymentMethod === "wallet" ? "E-Wallet" : "Cash on Delivery";
 
-            // Admin Notification Message (Shopify Merchant Style)
             const adminPushTitle = `New Order #${orderCode}`;
             const adminPushBody = `${itemCount} item(s) • Total: ${totalPrice} EGP (${paymentLabel}), ${fullName} placed an order`;
 
-            // User Notification Message (Shopify Customer Style)
             const userPushTitle = `🎉 Order Confirmed! #${orderCode}`;
             const userPushBody = `Thank you for your order! We've received your payment request of ${totalPrice} EGP and are processing it now.`;
 
-            // Realtime WebSockets Emit to Admin Room
             io.to("adminroom").emit("newOrder", {
                 ...order.toObject(),
                 orderCode,
@@ -298,7 +266,6 @@ export const checkout = async (req, res) => {
                 notificationBody: adminPushBody,
             });
 
-            // Push Notifications & DB Notifications in parallel (Settled so one failure doesn't stop others)
             await Promise.allSettled([
                 sendPushToAdmins({
                     title: adminPushTitle,
@@ -339,10 +306,8 @@ export const checkout = async (req, res) => {
     }
 };
 
-
 // ============================================================
 // GET /orders
-// Admin - Get all orders
 // ============================================================
 export const getOrders = async (req, res) => {
     try {
@@ -364,10 +329,8 @@ export const getOrders = async (req, res) => {
     }
 };
 
-
 // ============================================================
 // GET /orders/user
-// Get current user's orders
 // ============================================================
 export const getOrdersUser = async (req, res) => {
     try {
@@ -388,7 +351,7 @@ export const getOrdersUser = async (req, res) => {
                         createdAt: -1,
                     },
                 },
-            })
+            });
 
         if (!user) {
             return res.status(404).json({
@@ -411,10 +374,8 @@ export const getOrdersUser = async (req, res) => {
     }
 };
 
-
 // ============================================================
 // GET /orders/:id
-// Admin - Get single order
 // ============================================================
 export const getOrder = async (req, res) => {
     try {
@@ -442,10 +403,8 @@ export const getOrder = async (req, res) => {
     }
 };
 
-
 // ============================================================
 // GET /orders/user/:id
-// Admin - Get orders for specific user
 // ============================================================
 export const getOrdersByUser = async (req, res) => {
     try {
@@ -482,10 +441,8 @@ export const getOrdersByUser = async (req, res) => {
     }
 };
 
-
 // ============================================================
 // PUT /orders/:id/status
-// Change order status with Shopify-style customer updates
 // ============================================================
 export const changeStatus = async (req, res) => {
     try {
@@ -526,9 +483,6 @@ export const changeStatus = async (req, res) => {
         order.status = status;
         await order.save();
 
-        // --------------------------------------------------------
-        // SHOPIFY-STYLE ORDER STATUS MESSAGES
-        // --------------------------------------------------------
         const orderCode = order._id.toString().slice(-6).toUpperCase();
 
         const statusMessages = {
@@ -565,7 +519,7 @@ export const changeStatus = async (req, res) => {
 
         const currentStatusConfig = statusMessages[status] || statusMessages.pending;
 
-        // Realtime Event emit to specific order subscriber
+        // ✅ تم التطابق: الإرسال لنفس الـ Room المسجلة في السوكيت
         io.to(`userOrder-${order._id}`).emit("orderStatus", {
             orderId: order._id,
             status,
@@ -574,7 +528,6 @@ export const changeStatus = async (req, res) => {
             body: currentStatusConfig.body,
         });
 
-        // Send Push & DB Notification to User
         await sendPushToUser(order.user, {
             title: currentStatusConfig.title,
             body: currentStatusConfig.body,
@@ -587,7 +540,6 @@ export const changeStatus = async (req, res) => {
             type: currentStatusConfig.type,
         });
 
-        // Admin Notification
         await createNotification({
             title: `Order #${orderCode} Status Changed`,
             message: `Order status for #${orderCode} was changed to: ${status.toUpperCase()}`,
@@ -609,10 +561,8 @@ export const changeStatus = async (req, res) => {
     }
 };
 
-
 // ============================================================
 // DELETE /orders/:id
-// Admin - Delete order
 // ============================================================
 export const deleteOrder = async (req, res) => {
     try {
@@ -625,7 +575,6 @@ export const deleteOrder = async (req, res) => {
             });
         }
 
-        // Remove order ID from user
         await User.findByIdAndUpdate(
             order.user,
             {
@@ -637,9 +586,9 @@ export const deleteOrder = async (req, res) => {
 
         await order.deleteOne();
 
-        // Realtime
         const io = getIO();
 
+        // ✅ تم التطابق: الإرسال لنفس الـ Room المسجلة في السوكيت
         io.to(`userOrder-${order._id}`).emit(
             "orderDeleted",
             {
