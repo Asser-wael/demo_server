@@ -571,7 +571,7 @@ export const changeStatus = async (req, res) => {
         });
 
         // Push Notifications & DB Notifications
-        await sendPushToUser({userId: order.user, payload : {
+        await sendPushToUser({userId: order.user, payload :{
             title: currentStatusConfig.title,
             body: currentStatusConfig.body,
         }});
@@ -637,57 +637,6 @@ export const deleteOrder = async (req, res) => {
         });
     } catch (error) {
         console.error("Delete order error:", error);
-        return res.status(500).json({
-            success: false,
-            message: error.message,
-        });
-    }
-};
-
-// ============================================================
-// DELETE /orders/:id
-// Admin - Delete order
-// ============================================================
-export const deleteOrder = async (req, res) => {
-    try {
-        const order = await Order.findById(req.params.id);
-
-        if (!order) {
-            return res.status(404).json({
-                success: false,
-                message: "Order not found",
-            });
-        }
-
-        // Remove order ID from user
-        await User.findByIdAndUpdate(
-            order.user,
-            {
-                $pull: {
-                    orders: order._id,
-                },
-            }
-        );
-
-        await order.deleteOne();
-
-        // Realtime
-        const io = getIO();
-
-        io.to(`userOrder-${order._id}`).emit(
-            "orderDeleted",
-            {
-                orderId: order._id,
-            }
-        );
-
-        return res.json({
-            success: true,
-            message: "Order deleted successfully",
-        });
-    } catch (error) {
-        console.error("Delete order error:", error);
-
         return res.status(500).json({
             success: false,
             message: error.message,
