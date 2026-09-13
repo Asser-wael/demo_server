@@ -2,6 +2,18 @@ import Product from "../models/Product.js";
 import redis from "../config/redis.js";
 import User from "../models/User.js";
 
+// costPrice is internal margin data and must never reach this public,
+// unauthenticated product-details page.
+const stripCostPrice = (product) => ({
+  ...product,
+  variants: (product.variants || []).map((variant) => ({
+    ...variant,
+    sizes: (variant.sizes || []).map(({ costPrice, ...rest }) => rest),
+  })),
+});
+
+const stripCostPriceFromList = (products) => products.map(stripCostPrice);
+
 // Get product details
 export const getProductDetails = async (req, res) => {
   try {
@@ -65,9 +77,9 @@ export const getProductDetails = async (req, res) => {
     ]);
 
     const result = {
-      product,
-      relatedProducts,
-      differentProducts,
+      product: stripCostPrice(product),
+      relatedProducts: stripCostPriceFromList(relatedProducts),
+      differentProducts: stripCostPriceFromList(differentProducts),
     };
 
     await redis.setEx(
@@ -189,7 +201,7 @@ await Promise.all([
       message: existingReview
         ? "Review updated."
         : "Review added.",
-      product,
+      product: stripCostPrice(product.toObject()),
     });
   } catch (error) {
     console.error("addProductReview:", error);

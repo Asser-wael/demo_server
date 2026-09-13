@@ -1,5 +1,6 @@
 import stripe from "../config/stripe.js";
 import Order from "../models/Order.js";
+import User from "../models/User.js";
 
 export const createCheckoutSession = async (req, res) => {
   try {
@@ -9,6 +10,14 @@ export const createCheckoutSession = async (req, res) => {
       return res.status(400).json({
         message: "Order ID is required",
       });
+    }
+
+    // `protect` only puts { id } on req.user, so fetch the user record
+    // ourselves for the email — trusting req.user.email/_id directly
+    // would throw, since neither field is ever set on the token payload.
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
 
     const order = await Order.findOne({
@@ -53,11 +62,11 @@ export const createCheckoutSession = async (req, res) => {
 
       line_items: lineItems,
 
-      customer_email: req.user.email,
+      customer_email: user.email,
 
       metadata: {
         orderId: order._id.toString(),
-        userId: req.user._id.toString(),
+        userId: user._id.toString(),
       },
 
       success_url: `${process.env.CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,

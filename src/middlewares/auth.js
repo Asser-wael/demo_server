@@ -99,3 +99,14 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// For sensitive, already-authenticated account actions (change password,
+// delete account) — without this, a valid session token could be used to
+// brute-force the current password with no throttling at all.
+export const sensitiveActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { message: "Too many attempts, try again later.", type: "error" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

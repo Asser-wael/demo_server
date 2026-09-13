@@ -155,11 +155,11 @@ export const getProfitChart = async (req, res, next) => {
           status: { $ne: "cancelled" },
         },
       },
-      { $unwind: "$orderItems" },
+      { $unwind: "$items" },
       {
         $lookup: {
           from: "products",
-          localField: "orderItems.product",
+          localField: "items.product",
           foreignField: "_id",
           as: "productInfo",
         },
@@ -168,13 +168,13 @@ export const getProfitChart = async (req, res, next) => {
       { $unwind: "$productInfo.variants" },
       {
         $match: {
-          $expr: { $eq: ["$productInfo.variants.color.name", "$orderItems.color"] },
+          $expr: { $eq: ["$productInfo.variants.color.name", "$items.color"] },
         },
       },
       { $unwind: "$productInfo.variants.sizes" },
       {
         $match: {
-          $expr: { $eq: ["$productInfo.variants.sizes.size", "$orderItems.size"] },
+          $expr: { $eq: ["$productInfo.variants.sizes.size", "$items.size"] },
         },
       },
       {
@@ -197,7 +197,7 @@ export const getProfitChart = async (req, res, next) => {
         $addFields: {
           itemProfit: {
             $multiply: [
-              "$orderItems.quantity",
+              "$items.quantity",
               { $subtract: ["$sellPrice", "$productInfo.variants.sizes.costPrice"] },
             ],
           },
