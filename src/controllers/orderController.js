@@ -46,7 +46,6 @@ export const checkout = async (req, res) => {
 
         const { fullName, phone, city, address, paymentMethod,
             senderName, senderPhone, transactionId, items, isBuyNow } = req.body;
-        // ...
 
         const userId = req.user?.id;
         if (!userId) {
@@ -114,7 +113,6 @@ export const checkout = async (req, res) => {
             productsToUpdate.push({ product, variant, size, quantity: item.quantity });
         }
 
-
         // --------------------------------------------------------
         // Update stock & notify if low stock
         // --------------------------------------------------------
@@ -125,37 +123,46 @@ export const checkout = async (req, res) => {
 
             size.stock -= quantity;
 
+            // Low stock check wrapped safely
             if (size.stock <= 3) {
                 const lowStockMessage = `Low Stock Warning: "${product.name}" (${variant.color.name} / ${size.size}) has only ${size.stock} left in stock!`;
 
-                io.to("adminroom").emit("warning", {
-                    id: product._id,
-                    name: product.name,
-                    stock: size.stock,
-                    size: size.size,
-                    color: variant.color.name,
-                });
+                try {
+                    io.to("adminroom").emit("warning", {
+                        id: product._id,
+                        name: product.name,
+                        stock: size.stock,
+                        size: size.size,
+                        color: variant.color.name,
+                    });
 
-                await createNotification({
-                    title: "⚠️ Inventory Alert",
-                    message: lowStockMessage,
-                    type: "warning",
-                });
+                    await createNotification({
+                        title: "⚠️ Inventory Alert",
+                        message: lowStockMessage,
+                        type: "warning",
+                    });
 
-                await sendPushToAdmins({
-                    title: "⚠️ Inventory Alert",
-                    body: lowStockMessage,
-                });
+                    await sendPushToAdmins({
+                        title: "⚠️ Inventory Alert",
+                        body: lowStockMessage,
+                    });
+                } catch (notiError) {
+                    console.error("Failed to send low-stock notifications:", notiError.message);
+                }
             }
 
             await product.save();
             touchedProductIds.add(product._id.toString());
         }
 
-        // Clear Redis cache
-        await redis.del("products:all");
-        for (const productId of touchedProductIds) {
-            await redis.del(`product:${productId}`);
+        // Clear Redis cache safely
+        try {
+            await redis.del("products:all");
+            for (const productId of touchedProductIds) {
+                await redis.del(`product:${productId}`);
+            }
+        } catch (redisErr) {
+            console.error("Redis Cache Clear Error:", redisErr.message);
         }
 
         // --------------------------------------------------------
@@ -182,6 +189,7 @@ export const checkout = async (req, res) => {
                     : undefined,
             totalPrice,
         });
+
         // -------------------------------------------------------- 
         // TRIGGER N8N WORKFLOW (IF WALLET PAYMENT)
         // -------------------------------------------------------- 
@@ -197,57 +205,61 @@ export const checkout = async (req, res) => {
                 console.error("Failed to trigger n8n workflow:", err.message);
             });
         }
+
         if (isBuyNow !== "true") user.cart = [];
 
         user.orders.push(order._id);
         await user.save();
 
         // --------------------------------------------------------
-        // SHOPIFY-STYLE NOTIFICATION PAYLOADS
+        // SHOPIFY-STYLE NOTIFICATION PAYLOADS (SAFE EXECUTION)
         // --------------------------------------------------------
-        const orderCode = order._id.toString().slice(-6).toUpperCase();
-        const itemCount = orderItems.reduce((acc, curr) => acc + curr.quantity, 0);
-        const paymentLabel = paymentMethod === "wallet" ? "E-Wallet" : "Cash on Delivery";
+        try {
+            const orderCode = order._id.toString().slice(-6).toUpperCase();
+            const itemCount = orderItems.reduce((acc, curr) => acc + curr.quantity, 0);
+            const paymentLabel = paymentMethod === "wallet" ? "E-Wallet" : "Cash on Delivery";
 
-        // Admin Notification Message (Shopify Merchant Style)
-        const adminPushTitle = `New Order #${orderCode}`;
-        const adminPushBody = `${itemCount} item(s) • Total: ${totalPrice} EGP (${paymentLabel}),${fullName} placed an order`;
+            // Admin Notification Message (Shopify Merchant Style)
+            const adminPushTitle = `New Order #${orderCode}`;
+            const adminPushBody = `${itemCount} item(s) • Total: ${totalPrice} EGP (${paymentLabel}), ${fullName} placed an order`;
 
-        // User Notification Message (Shopify Customer Style)
-        const userPushTitle = `🎉 Order Confirmed! #${orderCode}`;
-        const userPushBody = `Thank you for your order! We've received your payment request of ${totalPrice} EGP and are processing it now.`;
+            // User Notification Message (Shopify Customer Style)
+            const userPushTitle = `🎉 Order Confirmed! #${orderCode}`;
+            const userPushBody = `Thank you for your order! We've received your payment request of ${totalPrice} EGP and are processing it now.`;
 
-        // Realtime WebSockets Emit to Admin Room
-        io.to("adminroom").emit("newOrder", {
-            ...order.toObject(),
-            orderCode,
-            notificationTitle: adminPushTitle,
-            notificationBody: adminPushBody,
-        });
+            // Realtime WebSockets Emit to Admin Room
+            io.to("adminroom").emit("newOrder", {
+                ...order.toObject(),
+                orderCode,
+                notificationTitle: adminPushTitle,
+                notificationBody: adminPushBody,
+            });
 
-        // Push Notifications
-        await sendPushToAdmins({
-            title: adminPushTitle,
-            body: adminPushBody,
-        });
-
-        await createNotification({
-            title: adminPushTitle,
-            message: adminPushBody,
-            type: "success",
-        });
-
-        await sendPushToUser(user._id, {
-            title: userPushTitle,
-            body: userPushBody,
-        });
-
-        await createNotificationUser({
-            user: user._id,
-            title: userPushTitle,
-            message: userPushBody,
-            type: "success",
-        });
+            // Push Notifications & DB Notifications in parallel (Settled so one failure doesn't stop others)
+            await Promise.allSettled([
+                sendPushToAdmins({
+                    title: adminPushTitle,
+                    body: adminPushBody,
+                }),
+                createNotification({
+                    title: adminPushTitle,
+                    message: adminPushBody,
+                    type: "success",
+                }),
+                sendPushToUser(user._id, {
+                    title: userPushTitle,
+                    body: userPushBody,
+                }),
+                createNotificationUser({
+                    user: user._id,
+                    title: userPushTitle,
+                    message: userPushBody,
+                    type: "success",
+                })
+            ]);
+        } catch (notificationError) {
+            console.error("Checkout Notifications Failed:", notificationError.message);
+        }
 
         return res.status(201).json({
             success: true,
@@ -263,8 +275,6 @@ export const checkout = async (req, res) => {
         });
     }
 };
-
-
 
 
 // ============================================================
