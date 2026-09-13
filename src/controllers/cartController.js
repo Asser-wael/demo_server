@@ -3,29 +3,32 @@ import Product from "../models/Product.js";
 
 // GET /cart
 export const getCart = async (req, res) => {
-    try {
-        const user = await User.findById(req.user.id).populate(
-            "cart.product",
-            "name image variants"
-        );
+  try {
+    const user = await User.findById(req.user.id);
 
-        if (!user)
-            return res.status(404).json({
-                message: "المستخدم غير موجود"
-            });
-
-        res.status(200).json({
-            success: true,
-            cart: user.cart,
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: error.message,
-        });
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
     }
-};
 
+    await user.populate("cart.product", "name image variants");
+
+    user.cart = user.cart.filter((item) => item.product);
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      cart: user.cart,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 // POST /cart/add
 export const addToCart = async (req, res) => {
     try {
