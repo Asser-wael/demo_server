@@ -3,8 +3,15 @@ import { defaultPalettes } from "../constants/defaultPalettes.js";
 
 const paletteSchema = new mongoose.Schema(
   {
-    bg: String, card: String, text: String, muted: String, border: String,
-    primary: String, primaryHover: String, accent: String, accentLight: String,
+    bg: { type: String, default: "" },
+    card: { type: String, default: "" },
+    text: { type: String, default: "" },
+    muted: { type: String, default: "" },
+    border: { type: String, default: "" },
+    primary: { type: String, default: "" },
+    primaryHover: { type: String, default: "" },
+    accent: { type: String, default: "" },
+    accentLight: { type: String, default: "" },
   },
   { _id: false }
 );
@@ -12,8 +19,13 @@ const paletteSchema = new mongoose.Schema(
 const settingsSchema = new mongoose.Schema(
   {
     theme: { type: String, enum: ["light", "dark"], default: "light" },
-    colors: { light: paletteSchema, dark: paletteSchema },
-    company: { name: { type: String, default: "company" } },
+    colors: {
+      light: { type: paletteSchema, default: () => defaultPalettes.light },
+      dark: { type: paletteSchema, default: () => defaultPalettes.dark },
+    },
+    company: {
+      name: { type: String, default: "company" },
+    },
     social: {
       instagram: { type: String, default: "" },
       tiktok: { type: String, default: "" },
@@ -25,17 +37,26 @@ const settingsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// الدالة المعدلة باستخدام upsert لضمان إنشاء مستند واحد دائماً
 settingsSchema.statics.getSingleton = async function () {
-  let doc = await this.findOne();
-
-  if (!doc) {
-    doc = await this.create({
-      colors: {
-        light: { ...defaultPalettes.light },
-        dark: { ...defaultPalettes.dark },
+  const doc = await this.findOneAndUpdate(
+    {}, // البحث عن أول مستند
+    {
+      $setOnInsert: {
+        theme: "light",
+        colors: {
+          light: defaultPalettes.light,
+          dark: defaultPalettes.dark,
+        },
+        company: { name: "company" },
       },
-    });
-  }
+    },
+    {
+      new: true, // إرجاع المستند بعد التعديل/الإنشاء
+      upsert: true, // إنشاء المستند إذا لم يكن موجوداً
+      setDefaultsOnInsert: true, // تطبيق القيم الافتراضية
+    }
+  );
 
   return doc;
 };
