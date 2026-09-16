@@ -28,7 +28,7 @@ app.use(helmet());
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
-  "https://demo-client-ashen.vercel.app"
+  "https://demo.cmcsweb.online"
 ].filter(Boolean);
 
 app.use(
