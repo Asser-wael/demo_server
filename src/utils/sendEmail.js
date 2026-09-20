@@ -1,9 +1,6 @@
 import resend from "../config/resend.js";
 
-// One small function, two call sites (account verification, password
-// reset) — both just need a 6-digit code delivered clearly, so a single
-// template with a variable subject/heading avoids duplicating the same
-// email-sending boilerplate twice.
+// Send OTP for account verification or password reset
 const sendOTPEmail = async (to, otp, purpose = "verify") => {
   const subject =
     purpose === "reset"
@@ -16,10 +13,31 @@ const sendOTPEmail = async (to, otp, purpose = "verify") => {
       : "Your verification code is:";
 
   await resend.emails.send({
-    from: "Store <onboarding@yourdomain.com>",
+    from: "Demo Restaurant <noreply@demo.cmcsweb.online>",
     to,
     subject,
-    html: `<h2>${heading} ${otp}</h2><p>Expires in 10 minutes. If you didn't request this, you can safely ignore this email.</p>`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto;">
+        <h2>${heading}</h2>
+
+        <div style="
+          font-size: 32px;
+          font-weight: bold;
+          letter-spacing: 8px;
+          margin: 20px 0;
+        ">
+          ${otp}
+        </div>
+
+        <p>
+          This code expires in 10 minutes.
+        </p>
+
+        <p>
+          If you didn't request this, you can safely ignore this email.
+        </p>
+      </div>
+    `,
   });
 };
 
