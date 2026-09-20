@@ -1,6 +1,7 @@
 import Product from "../models/Product.js";
 import redis from "../config/redis.js";
 import User from "../models/User.js";
+import errorCatch from "../utils/errorCatch.js";
 
 // costPrice is internal margin data and must never reach this public,
 // unauthenticated product-details page.
@@ -15,99 +16,89 @@ const stripCostPrice = (product) => ({
 const stripCostPriceFromList = (products) => products.map(stripCostPrice);
 
 // Get product details
-export const getProductDetails = async (req, res) => {
-  try {
-    const { id } = req.params;
+export const getProductDetails = errorCatch(async (req, res) => {
+  const { id } = req.params;
 
-    const cacheKey = `product-details:${id}`;
+  const cacheKey = `product-details:${id}`;
 
-    const cached = await redis.get(cacheKey);
+  const cached = await redis.get(cacheKey);
 
-    if (cached) {
-      return res.status(200).json({
-        success: true,
-        fromCache: true,
-        ...JSON.parse(cached),
-      });
-    }
-
-    const product = await Product.findById(id)
-      .populate("category", "name")
-      .populate("reviews.user", "name")
-      .lean();
-
-    if (!product || !product.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found.",
-      });
-    }
-
-    const relatedProducts = await Product.find({
-      _id: { $ne: product._id },
-      category: product.category?._id,
-      isActive: true,
-    })
-      .limit(8)
-      .select("name image variants rating numReviews")
-      .lean();
-
-    const differentProducts = await Product.aggregate([
-      {
-        $match: {
-          _id: { $ne: product._id },
-          category: { $ne: product.category?._id },
-          isActive: true,
-        },
-      },
-      {
-        $sample: {
-          size: 8,
-        },
-      },
-      {
-        $project: {
-          name: 1,
-          image: 1,
-          variants: 1,
-          rating: 1,
-          numReviews: 1,
-        },
-      },
-    ]);
-
-    const result = {
-      product: stripCostPrice(product),
-      relatedProducts: stripCostPriceFromList(relatedProducts),
-      differentProducts: stripCostPriceFromList(differentProducts),
-    };
-
-    await redis.setEx(
-      cacheKey,
-      300,
-      JSON.stringify(result)
-    );
-
+  if (cached) {
     return res.status(200).json({
       success: true,
-      fromCache: false,
-      ...result,
-    });
-  } catch (error) {
-    console.error("getProductDetails:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch product.",
+      fromCache: true,
+      ...JSON.parse(cached),
     });
   }
-};
+
+  const product = await Product.findById(id)
+    .populate("category", "name")
+    .populate("reviews.user", "name")
+    .lean();
+
+  if (!product || !product.isActive) {
+    return res.status(404).json({
+      success: false,
+      message: "Product not found.",
+    });
+  }
+
+  const relatedProducts = await Product.find({
+    _id: { $ne: product._id },
+    category: product.category?._id,
+    isActive: true,
+  })
+    .limit(8)
+    .select("name image variants rating numReviews")
+    .lean();
+
+  const differentProducts = await Product.aggregate([
+    {
+      $match: {
+        _id: { $ne: product._id },
+        category: { $ne: product.category?._id },
+        isActive: true,
+      },
+    },
+    {
+      $sample: {
+        size: 8,
+      },
+    },
+    {
+      $project: {
+        name: 1,
+        image: 1,
+        variants: 1,
+        rating: 1,
+        numReviews: 1,
+      },
+    },
+  ]);
+
+  const result = {
+    product: stripCostPrice(product),
+    relatedProducts: stripCostPriceFromList(relatedProducts),
+    differentProducts: stripCostPriceFromList(differentProducts),
+  };
+
+  await redis.setEx(
+    cacheKey,
+    300,
+    JSON.stringify(result)
+  );
+
+  return res.status(200).json({
+    success: true,
+    fromCache: false,
+    ...result,
+  });
+});
 
 // Add / Update review
-export const addProductReview = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { rating, comment } = req.body;
+export const addProductReview = errorCatch(async (req, res) => {
+  const { id } = req.params;
+  const { rating, comment } = req.body;
 
 const numericRating = Number(rating);
 
@@ -203,12 +194,4 @@ await Promise.all([
         : "Review added.",
       product: stripCostPrice(product.toObject()),
     });
-  } catch (error) {
-    console.error("addProductReview:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to add review.",
-    });
-  }
-};
+});

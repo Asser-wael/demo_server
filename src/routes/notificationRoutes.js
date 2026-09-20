@@ -7,6 +7,7 @@ import {
     markAllAsRead,
     deleteNotification,
     saveSubscription,
+    removeSubscription,
     markUserNotificationAsRead,
     markAllUserNotificationsAsRead,
     deleteUserNotification,
@@ -15,6 +16,7 @@ import {
 import {
     protect,
     adminMiddleware,
+    subscribeLimiter,
 } from "../middlewares/auth.js";
 
 const router = express.Router();
@@ -91,8 +93,17 @@ router.delete(
 // Save push subscription
 router.post(
     "/subscribe",
+    subscribeLimiter,
     protect,
     saveSubscription
+);
+
+// Remove push subscription
+router.post(
+    "/unsubscribe",
+    subscribeLimiter,
+    protect,
+    removeSubscription
 );
 
 

@@ -110,3 +110,33 @@ export const sensitiveActionLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Checkout creates real orders and decrements real stock — throttle it
+// separately from the general API limiter so it can't be used to spam
+// orders or hammer the atomic stock-update path.
+export const checkoutLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { success: false, message: "Too many checkout attempts, please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Review creation — cheap to abuse (spam/fake reviews) if left unthrottled.
+export const reviewLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { success: false, message: "Too many reviews submitted, please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Push subscription — low abuse potential, but still a write endpoint
+// that touches the database on every call.
+export const subscribeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { success: false, message: "Too many requests, please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

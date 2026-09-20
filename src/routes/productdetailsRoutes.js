@@ -5,7 +5,7 @@ import {
   addProductReview,
 } from "../controllers/productdetailsController.js";
 
-import { protect } from "../middlewares/auth.js";
+import { protect, reviewLimiter } from "../middlewares/auth.js";
 
 const router = express.Router();
 
@@ -18,6 +18,7 @@ router.get(
 // Add / update review
 router.post(
   "/product/:id/reviews",
+  reviewLimiter,
   protect,
   addProductReview
 );

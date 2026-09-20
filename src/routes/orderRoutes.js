@@ -14,6 +14,7 @@ import {
     adminMiddleware,
     protect,
     optionalAuthMiddleware,
+    checkoutLimiter,
 } from "../middlewares/auth.js";
 
 import { upload } from "../utils/multer.js";
@@ -31,6 +32,7 @@ const router = express.Router();
 // parsing/buffering an uploaded file.
 router.post(
     "/checkout",
+    checkoutLimiter,
     protect,
     upload.single("image"),
     checkout

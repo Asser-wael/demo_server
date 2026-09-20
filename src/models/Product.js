@@ -13,9 +13,8 @@ const sizeSchema = new mongoose.Schema(
 
 const variantSchema = new mongoose.Schema(
   {
-    // variant
-    color: {
-      name: { type: String, required: true }, // "Red"
+    variant: {
+      name: { type: String, required: true }, // e.g. "Spicy", "Large Portion"
     },
     sizes: [sizeSchema],
   },
@@ -29,7 +28,7 @@ const reviewSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    name: { type: String, required: true }, 
+    name: { type: String, required: true },
     rating: { type: Number, required: true, min: 1, max: 5 },
     comment: { type: String, required: true, trim: true },
   },
@@ -56,5 +55,12 @@ const productSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Covers the two real, established query patterns: the public product
+// list/latest-products endpoints (isActive, newest first) and category
+// browsing (category + isActive together, since every public listing
+// filters both).
+productSchema.index({ isActive: 1, createdAt: -1 });
+productSchema.index({ category: 1, isActive: 1 });
 
 export default mongoose.model("products", productSchema);

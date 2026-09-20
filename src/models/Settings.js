@@ -25,6 +25,21 @@ const settingsSchema = new mongoose.Schema(
     },
     company: {
       name: { type: String, default: "company" },
+      address: { type: String, default: "" },
+    },
+    // Hero media on the Home page. When isActive is false (or nothing has
+    // ever been uploaded), the frontend falls back to its own default
+    // bundled asset rather than showing a broken/empty hero.
+    homeContent: {
+      video: {
+        url: { type: String, default: "" },
+        id: { type: String, default: "" },
+      },
+      image: {
+        url: { type: String, default: "" },
+        id: { type: String, default: "" },
+      },
+      isActive: { type: Boolean, default: false },
     },
     social: {
       instagram: { type: String, default: "" },

@@ -1,11 +1,12 @@
 import axios from "axios";
-import streamifier from "streamifier";
-import cloudinary from "../config/cloudinary.js";
+import mongoose from "mongoose";
 import User from "../models/User.js";
 import Product from "../models/Product.js";
 import Order from "../models/Order.js";
 import redis from "../config/redis.js";
 import { getIO } from "../sockets/index.js";
+import uploadImage from "../utils/uploadImage.js";
+import errorCatch from "../utils/errorCatch.js";
 import {
     createNotification,
     createNotificationUser,
@@ -22,30 +23,7 @@ export const checkout = async (req, res) => {
     try {
         const io = getIO();
 
-        let imageUrl = "";
-
-        // Upload wallet transfer image if provided
-        if (req.file) {
-            const streamUpload = () =>
-                new Promise((resolve, reject) => {
-                    const stream = cloudinary.uploader.upload_stream(
-                        { folder: "wallet" },
-                        (error, result) => {
-                            if (error) return reject(error);
-                            resolve(result);
-                        }
-                    );
-
-                    streamifier
-                        .createReadStream(req.file.buffer)
-                        .pipe(stream);
-                });
-
-            const result = await streamUpload();
-            imageUrl = result.secure_url;
-        }
-
-        const { fullName, phone, city, address, paymentMethod,
+        const { fullName, phone, city, address, paymentMethod, orderType, tableNumber,
             senderName, senderPhone, transactionId, items, isBuyNow } = req.body;
 
         const userId = req.user?.id;
@@ -56,6 +34,71 @@ export const checkout = async (req, res) => {
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ success: false, message: "User not found" });
+        }
+
+        // --------------------------------------------------------
+        // Validate orderType, paymentMethod, and the fields that are
+        // actually required for the chosen orderType — before doing any
+        // real work (including the wallet-image upload below), so an
+        // invalid request fails fast instead of burning a Cloudinary
+        // upload on a request we're going to reject anyway.
+        // --------------------------------------------------------
+        const allowedOrderTypes = ["takeaway", "dine_in", "delivery"];
+        if (!allowedOrderTypes.includes(orderType)) {
+            return res.status(400).json({ success: false, message: "Please choose a valid order type" });
+        }
+
+        const allowedPaymentMethods = ["cash", "wallet"];
+        if (!allowedPaymentMethods.includes(paymentMethod)) {
+            return res.status(400).json({ success: false, message: "Please choose a valid payment method" });
+        }
+
+        let shippingAddress;
+        let finalTableNumber = null;
+
+        if (orderType === "delivery") {
+            if (!fullName?.trim() || !phone?.trim() || !city?.trim() || !address?.trim()) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Full name, phone, city and address are required for delivery orders",
+                });
+            }
+
+            shippingAddress = {
+                fullName: fullName.trim(),
+                phone: phone.trim(),
+                city: city.trim(),
+                address: address.trim(),
+            };
+        } else if (orderType === "dine_in") {
+            if (!tableNumber?.toString().trim()) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Table number is required for dine-in orders",
+                });
+            }
+
+            finalTableNumber = tableNumber.toString().trim();
+
+            // Name/phone are optional here — the order is already tied to
+            // the logged-in account, this is only useful if staff want a
+            // name to call out.
+            if (fullName?.trim() || phone?.trim()) {
+                shippingAddress = { fullName: fullName?.trim(), phone: phone?.trim() };
+            }
+        } else {
+            // takeaway — nothing is required beyond the account itself.
+            if (fullName?.trim() || phone?.trim()) {
+                shippingAddress = { fullName: fullName?.trim(), phone: phone?.trim() };
+            }
+        }
+
+        let imageUrl = "";
+
+        // Upload wallet transfer image if provided
+        if (req.file) {
+            const result = await uploadImage(req.file, "wallet");
+            imageUrl = result.secure_url;
         }
 
         // اقرأ الـ items من الريكوست بدل ما تعتمد على user.cart فقط
@@ -75,11 +118,11 @@ export const checkout = async (req, res) => {
                 return res.status(404).json({ success: false, message: "Product not found" });
             }
 
-            const variant = product.variants.find((v) => v.color?.name === item.color);
+            const variant = product.variants.find((v) => v.variant?.name === item.variant);
             if (!variant) {
                 return res.status(400).json({
                     success: false,
-                    message: `Color "${item.color}" not found for ${product.name}`,
+                    message: `Variant "${item.variant}" not found for ${product.name}`,
                 });
             }
 
@@ -98,15 +141,13 @@ export const checkout = async (req, res) => {
                 });
             }
 
-            // القاعدة: لو offerPrice > 0 استخدمه، غير كده استخدم الـ price العادي
-            // (offerPrice == 0 معناه مفيش عرض، مش سعر فعلي)
-            const price = size.offerPrice > 0 ? size.offerPrice : size.price;
+            const price = size.offerPrice != null ? size.offerPrice : size.price;
             totalPrice += price * item.quantity;
 
             orderItems.push({
                 product: product._id,
                 name: product.name,
-                color: item.color,
+                variant: item.variant,
                 size: item.size,
                 quantity: item.quantity,
                 price,
@@ -137,7 +178,7 @@ export const checkout = async (req, res) => {
                         { $inc: { "variants.$[v].sizes.$[s].stock": applied.quantity } },
                         {
                             arrayFilters: [
-                                { "v.color.name": applied.color },
+                                { "v.variant.name": applied.variant },
                                 { "s.size": applied.size },
                             ],
                         }
@@ -156,7 +197,7 @@ export const checkout = async (req, res) => {
                 { $inc: { "variants.$[v].sizes.$[s].stock": -quantity } },
                 {
                     arrayFilters: [
-                        { "v.color.name": variant.color.name },
+                        { "v.variant.name": variant.variant.name },
                         { "s.size": size.size, "s.stock": { $gte: quantity } },
                     ],
                 }
@@ -168,13 +209,13 @@ export const checkout = async (req, res) => {
 
                 return res.status(409).json({
                     success: false,
-                    message: `${product.name} (${variant.color.name} / ${size.size}) is no longer available in the requested quantity`,
+                    message: `${product.name} (${variant.variant.name} / ${size.size}) is no longer available in the requested quantity`,
                 });
             }
 
             appliedStockUpdates.push({
                 productId: product._id,
-                color: variant.color.name,
+                variant: variant.variant.name,
                 size: size.size,
                 quantity,
             });
@@ -185,7 +226,7 @@ export const checkout = async (req, res) => {
             // stock decision, so approximate freshness here is fine.
             const remainingStock = size.stock - quantity;
             if (remainingStock <= 3) {
-                const lowStockMessage = `Low Stock Warning: "${product.name}" (${variant.color.name} / ${size.size}) has only ${remainingStock} left in stock!`;
+                const lowStockMessage = `Low Stock Warning: "${product.name}" (${variant.variant.name} / ${size.size}) has only ${remainingStock} left in stock!`;
 
                 try {
                     io.to("adminroom").emit("warning", {
@@ -193,7 +234,7 @@ export const checkout = async (req, res) => {
                         name: product.name,
                         stock: remainingStock,
                         size: size.size,
-                        color: variant.color.name,
+                        variant: variant.variant.name,
                     });
 
                     await createNotification({
@@ -230,12 +271,9 @@ export const checkout = async (req, res) => {
             order = await Order.create({
                 user: user._id,
                 items: orderItems,
-                shippingAddress: {
-                    fullName,
-                    phone,
-                    city,
-                    address,
-                },
+                orderType,
+                tableNumber: finalTableNumber,
+                shippingAddress,
                 paymentMethod,
                 walletPayment:
                     paymentMethod === "wallet"
@@ -282,15 +320,21 @@ export const checkout = async (req, res) => {
         try {
             const orderCode = order._id.toString().slice(-6).toUpperCase();
             const itemCount = orderItems.reduce((acc, curr) => acc + curr.quantity, 0);
-            const paymentLabel = paymentMethod === "wallet" ? "E-Wallet" : "Cash on Delivery";
+            const paymentLabel = paymentMethod === "wallet" ? "E-Wallet" : "Cash";
+            const orderTypeLabel = {
+                delivery: "Delivery",
+                takeaway: "Takeaway",
+                dine_in: "Dine In",
+            }[orderType];
+            const customerName = shippingAddress?.fullName?.trim() || user.name;
 
             // Admin Notification Message (Shopify Merchant Style)
             const adminPushTitle = `New Order #${orderCode}`;
-            const adminPushBody = `${itemCount} item(s) • Total: NZ$${totalPrice} (${paymentLabel}), ${fullName} placed an order`;
+            const adminPushBody = `${itemCount} item(s) • Total: ${totalPrice} EGP (${paymentLabel}, ${orderTypeLabel}), ${customerName} placed an order`;
 
             // User Notification Message (Shopify Customer Style)
             const userPushTitle = `🎉 Order Confirmed! #${orderCode}`;
-            const userPushBody = `Thank you for your order! We've received your payment request of NZ$${totalPrice} and are processing it now.`;
+            const userPushBody = `Thank you for your order! We've received your payment request of ${totalPrice} EGP and are processing it now.`;
 
             // Realtime WebSockets Emit to Admin Room
             io.to("adminroom").emit("newOrder", {
@@ -344,321 +388,328 @@ export const checkout = async (req, res) => {
 
 // ============================================================
 // GET /orders
-// Admin - Get all orders
+// Admin - Get all orders (paginated — this list only grows, and an
+// unbounded `Order.find()` here would eventually mean loading every
+// order ever placed on every single admin page visit)
 // ============================================================
-export const getOrders = async (req, res) => {
-    try {
-        const orders = await Order.find()
+export const getOrders = errorCatch(async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const skip = (page - 1) * limit;
+
+    const [orders, totalOrders] = await Promise.all([
+        Order.find()
             .populate("user", "name email avatar")
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit),
+        Order.countDocuments(),
+    ]);
 
-        return res.json({
-            success: true,
-            orders,
-        });
-    } catch (error) {
-        console.error("Get orders error:", error);
-
-        return res.status(500).json({
-            success: false,
-            message: error.message,
-        });
-    }
-};
+    return res.json({
+        success: true,
+        orders,
+        pagination: {
+            page,
+            limit,
+            totalOrders,
+            totalPages: Math.ceil(totalOrders / limit),
+        },
+    });
+});
 
 
 // ============================================================
 // GET /orders/user
-// Get current user's orders
+// Get current user's orders (paginated for the same reason as above —
+// a long-time customer's order history shouldn't all load at once)
 // ============================================================
-export const getOrdersUser = async (req, res) => {
-    try {
-        const userId = req.user?.id;
+export const getOrdersUser = errorCatch(async (req, res) => {
+    const userId = req.user?.id;
 
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                message: "Unauthorized",
-            });
-        }
-
-        const user = await User.findById(userId)
-            .populate({
-                path: "orders",
-                options: {
-                    sort: {
-                        createdAt: -1,
-                    },
-                },
-            })
-
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "User not found",
-            });
-        }
-
-        return res.json({
-            success: true,
-            orders: user.orders,
-        });
-    } catch (error) {
-        console.error("Get user orders error:", error);
-
-        return res.status(500).json({
+    if (!userId) {
+        return res.status(401).json({
             success: false,
-            message: error.message,
+            message: "Unauthorized",
         });
     }
-};
+
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const userExists = await User.exists({ _id: userId });
+
+    if (!userExists) {
+        return res.status(404).json({
+            success: false,
+            message: "User not found",
+        });
+    }
+
+    const [orders, totalOrders, statsAgg] = await Promise.all([
+        Order.find({ user: userId })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit),
+        Order.countDocuments({ user: userId }),
+        // Lightweight aggregate across ALL of this user's orders (not just
+        // the current page) — the "Total Spent" / "Pending" stats on the
+        // Orders page need to stay accurate regardless of which page is
+        // loaded, so they can't be derived from the paginated array alone.
+        Order.aggregate([
+            { $match: { user: new mongoose.Types.ObjectId(userId) } },
+            {
+                $group: {
+                    _id: null,
+                    totalSpent: { $sum: "$totalPrice" },
+                    pendingCount: {
+                        $sum: {
+                            $cond: [
+                                { $in: ["$status", ["pending", "confirmed"]] },
+                                1,
+                                0,
+                            ],
+                        },
+                    },
+                },
+            },
+        ]),
+    ]);
+
+    const stats = statsAgg[0] || { totalSpent: 0, pendingCount: 0 };
+
+    return res.json({
+        success: true,
+        orders,
+        stats: {
+            totalOrders,
+            totalSpent: stats.totalSpent,
+            pendingOrders: stats.pendingCount,
+        },
+        pagination: {
+            page,
+            limit,
+            totalOrders,
+            totalPages: Math.ceil(totalOrders / limit),
+        },
+    });
+});
 
 
 // ============================================================
 // GET /orders/:id
 // Admin - Get single order
 // ============================================================
-export const getOrder = async (req, res) => {
-    try {
-        const order = await Order.findById(req.params.id)
-            .populate("user", "name email avatar");
+export const getOrder = errorCatch(async (req, res) => {
+    const order = await Order.findById(req.params.id)
+        .populate("user", "name email avatar");
 
-        if (!order) {
-            return res.status(404).json({
-                success: false,
-                message: "Order not found",
-            });
-        }
-
-        return res.json({
-            success: true,
-            order,
-        });
-    } catch (error) {
-        console.error("Get order error:", error);
-
-        return res.status(500).json({
+    if (!order) {
+        return res.status(404).json({
             success: false,
-            message: error.message,
+            message: "Order not found",
         });
     }
-};
+
+    return res.json({
+        success: true,
+        order,
+    });
+});
 
 
 // ============================================================
 // GET /orders/user/:id
 // Admin - Get orders for specific user
 // ============================================================
-export const getOrdersByUser = async (req, res) => {
-    try {
-        const { id } = req.params;
+export const getOrdersByUser = errorCatch(async (req, res) => {
+    const { id } = req.params;
 
-        const user = await User.findById(id)
-            .populate({
-                path: "orders",
-                options: {
-                    sort: {
-                        createdAt: -1,
-                    },
+    const user = await User.findById(id)
+        .populate({
+            path: "orders",
+            options: {
+                sort: {
+                    createdAt: -1,
                 },
-            });
-
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "User not found",
-            });
-        }
-
-        return res.json({
-            success: true,
-            orders: user.orders,
+            },
         });
-    } catch (error) {
-        console.error("Get orders by user error:", error);
 
-        return res.status(500).json({
+    if (!user) {
+        return res.status(404).json({
             success: false,
-            message: error.message,
+            message: "User not found",
         });
     }
-};
+
+    return res.json({
+        success: true,
+        orders: user.orders,
+    });
+});
 
 
 // ============================================================
 // PUT /orders/:id/status
 // Change order status with Shopify-style customer updates
 // ============================================================
-export const changeStatus = async (req, res) => {
-    try {
-        const io = getIO();
-        const { status } = req.body;
+export const changeStatus = errorCatch(async (req, res) => {
+    const io = getIO();
+    const { status } = req.body;
 
-        const allowedStatuses = [
-            "pending",
-            "confirmed",
-            "shipped",
-            "delivered",
-            "cancelled",
-        ];
+    const allowedStatuses = [
+        "pending",
+        "confirmed",
+        "shipped",
+        "delivered",
+        "cancelled",
+    ];
 
-        if (!allowedStatuses.includes(status)) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid order status",
-            });
-        }
-
-        const order = await Order.findById(req.params.id);
-
-        if (!order) {
-            return res.status(404).json({
-                success: false,
-                message: "Order not found",
-            });
-        }
-
-        if (order.status === status) {
-            return res.status(400).json({
-                success: false,
-                message: "Order already has this status",
-            });
-        }
-
-        order.status = status;
-        await order.save();
-
-        // --------------------------------------------------------
-        // SHOPIFY-STYLE ORDER STATUS MESSAGES
-        // --------------------------------------------------------
-        const orderCode = order._id.toString().slice(-6).toUpperCase();
-
-        const statusMessages = {
-            pending: {
-                title: `⏳ Order #${orderCode} Status Update`,
-                body: "Your order is currently pending review.",
-                type: "info",
-            },
-
-            confirmed: {
-                title: `📦 Order #${orderCode} is Confirmed`,
-                body: "Great news! Your order has been confirmed and is being prepared.",
-                type: "info",
-            },
-
-            shipped: {
-                title: `🚚 Order #${orderCode} Has Been Shipped!`,
-                body: "Your package is on its way! Get ready to receive your items soon.",
-                type: "info",
-            },
-
-            delivered: {
-                title: `✅ Order #${orderCode} Delivered!`,
-                body: "Your order has been delivered successfully. We hope you enjoy your purchase!",
-                type: "success",
-            },
-
-            cancelled: {
-                title: `❌ Order #${orderCode} Cancelled`,
-                body: "Your order has been cancelled. Please contact customer support if you need further assistance.",
-                type: "error",
-            },
-        };
-
-        const currentStatusConfig = statusMessages[status] || statusMessages.pending;
-
-        // Realtime Event emit to specific order subscriber
-        io.to(`userOrder-${order._id}`).emit("orderStatus", {
-            orderId: order._id,
-            status,
-            orderCode,
-            title: currentStatusConfig.title,
-            body: currentStatusConfig.body,
-        });
-
-        // Send Push & DB Notification to User
-        await sendPushToUser(order.user, {
-            title: currentStatusConfig.title,
-            body: currentStatusConfig.body,
-        });
-
-        await createNotificationUser({
-            user: order.user,
-            title: currentStatusConfig.title,
-            message: currentStatusConfig.body,
-            type: currentStatusConfig.type,
-        });
-
-        // Admin Notification
-        await createNotification({
-            title: `Order #${orderCode} Status Changed`,
-            message: `Order status for #${orderCode} was changed to: ${status.toUpperCase()}`,
-            type: "info",
-        });
-
-        return res.json({
-            success: true,
-            message: "Status updated successfully",
-            order,
-        });
-    } catch (error) {
-        console.error("Change status error:", error);
-
-        return res.status(500).json({
+    if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({
             success: false,
-            message: error.message,
+            message: "Invalid order status",
         });
     }
-};
+
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+        return res.status(404).json({
+            success: false,
+            message: "Order not found",
+        });
+    }
+
+    if (order.status === status) {
+        return res.status(400).json({
+            success: false,
+            message: "Order already has this status",
+        });
+    }
+
+    order.status = status;
+    await order.save();
+
+    // --------------------------------------------------------
+    // SHOPIFY-STYLE ORDER STATUS MESSAGES
+    // --------------------------------------------------------
+    const orderCode = order._id.toString().slice(-6).toUpperCase();
+
+    const statusMessages = {
+        pending: {
+            title: `⏳ Order #${orderCode} Status Update`,
+            body: "Your order is currently pending review.",
+            type: "info",
+        },
+
+        confirmed: {
+            title: `📦 Order #${orderCode} is Confirmed`,
+            body: "Great news! Your order has been confirmed and is being prepared.",
+            type: "info",
+        },
+
+        shipped: {
+            title: `🚚 Order #${orderCode} Has Been Shipped!`,
+            body: "Your package is on its way! Get ready to receive your items soon.",
+            type: "info",
+        },
+
+        delivered: {
+            title: `✅ Order #${orderCode} Delivered!`,
+            body: "Your order has been delivered successfully. We hope you enjoy your purchase!",
+            type: "success",
+        },
+
+        cancelled: {
+            title: `❌ Order #${orderCode} Cancelled`,
+            body: "Your order has been cancelled. Please contact customer support if you need further assistance.",
+            type: "error",
+        },
+    };
+
+    const currentStatusConfig = statusMessages[status] || statusMessages.pending;
+
+    // Realtime Event — sent to every socket this user has open (they auto-
+    // join their own `user:<id>` room on connect), not just one that
+    // happened to subscribe to this specific order.
+    io.to(`user:${order.user}`).emit("orderStatus", {
+        orderId: order._id,
+        status,
+        orderCode,
+        title: currentStatusConfig.title,
+        body: currentStatusConfig.body,
+    });
+
+    // Send Push & DB Notification to User
+    await sendPushToUser(order.user, {
+        title: currentStatusConfig.title,
+        body: currentStatusConfig.body,
+    });
+
+    await createNotificationUser({
+        user: order.user,
+        title: currentStatusConfig.title,
+        message: currentStatusConfig.body,
+        type: currentStatusConfig.type,
+    });
+
+    // Admin Notification
+    await createNotification({
+        title: `Order #${orderCode} Status Changed`,
+        message: `Order status for #${orderCode} was changed to: ${status.toUpperCase()}`,
+        type: "info",
+    });
+
+    return res.json({
+        success: true,
+        message: "Status updated successfully",
+        order,
+    });
+});
 
 
 // ============================================================
 // DELETE /orders/:id
 // Admin - Delete order
 // ============================================================
-export const deleteOrder = async (req, res) => {
-    try {
-        const order = await Order.findById(req.params.id);
+export const deleteOrder = errorCatch(async (req, res) => {
+    const order = await Order.findById(req.params.id);
 
-        if (!order) {
-            return res.status(404).json({
-                success: false,
-                message: "Order not found",
-            });
-        }
-
-        // Remove order ID from user
-        await User.findByIdAndUpdate(
-            order.user,
-            {
-                $pull: {
-                    orders: order._id,
-                },
-            }
-        );
-
-        await order.deleteOne();
-
-        // Realtime
-        const io = getIO();
-
-        io.to(`userOrder-${order._id}`).emit(
-            "orderDeleted",
-            {
-                orderId: order._id,
-            }
-        );
-
-        return res.json({
-            success: true,
-            message: "Order deleted successfully",
-        });
-    } catch (error) {
-        console.error("Delete order error:", error);
-
-        return res.status(500).json({
+    if (!order) {
+        return res.status(404).json({
             success: false,
-            message: error.message,
+            message: "Order not found",
         });
     }
-};
+
+    // Remove order ID from user
+    await User.findByIdAndUpdate(
+        order.user,
+        {
+            $pull: {
+                orders: order._id,
+            },
+        }
+    );
+
+    // Realtime — capture the owner before the order is deleted.
+    const orderOwnerId = order.user;
+
+    await order.deleteOne();
+
+    const io = getIO();
+
+    io.to(`user:${orderOwnerId}`).emit(
+        "orderDeleted",
+        {
+            orderId: order._id,
+        }
+    );
+
+    return res.json({
+        success: true,
+        message: "Order deleted successfully",
+    });
+});

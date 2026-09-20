@@ -8,7 +8,7 @@ const cartItemSchema = new mongoose.Schema(
       ref: "products",
       required: true,
     },
-    color: String,
+    variant: String,
     size: String,
     quantity: {
       type: Number,
@@ -36,8 +36,17 @@ const userSchema = new mongoose.Schema(
 
     password: {
       type: String,
-      required: true,
+      required: function () {
+        // Google sign-in accounts never set a password.
+        return !this.googleId;
+      },
       select: false, // مش هيترجع إلا لو عملت .select("+password")
+    },
+
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true, // lets multiple non-Google accounts coexist without a null-collision on this index
     },
     role: {
       type: String,

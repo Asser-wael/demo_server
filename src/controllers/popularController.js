@@ -1,90 +1,64 @@
 import redis from "../config/redis.js";
 import PopularModel from "../models/popular.js";
+import errorCatch from "../utils/errorCatch.js";
 
 const POPULAR_CACHE_KEY = "popular:all";
 
-export const getPopularProducts = async (req, res) => {
-    try {
-        const cached = await redis.get(POPULAR_CACHE_KEY);
+export const getPopularProducts = errorCatch(async (req, res) => {
+    const cached = await redis.get(POPULAR_CACHE_KEY);
 
-        if (cached) {
-            return res.status(200).json({
-                success: true,
-                products: JSON.parse(cached),
-            });
-        }
-
-        const products = await PopularModel.find().populate("id");
-
-        await redis.set(POPULAR_CACHE_KEY, JSON.stringify(products), "EX", 300);
-
+    if (cached) {
         return res.status(200).json({
             success: true,
-            products,
-        });
-
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: "Failed to get popular products.",
-            error: error.message,
+            products: JSON.parse(cached),
         });
     }
-};
 
-export const addPopularProduct = async (req, res) => {
-    try {
-        const { id } = req.body;
+    const products = await PopularModel.find().populate("id");
 
-        if (!id) return res.status(400).json({ success: false, message: "Product id is required." });
+    await redis.set(POPULAR_CACHE_KEY, JSON.stringify(products), "EX", 300);
 
-        const exists = await PopularModel.findOne({ id });
+    return res.status(200).json({
+        success: true,
+        products,
+    });
+});
 
-        if (exists) {
-            return res.json({
-                success: false,
-                message: "Product already exists.",
-            });
-        }
+export const addPopularProduct = errorCatch(async (req, res) => {
+    const { id } = req.body;
 
-        const popular = await PopularModel.create({ id });
+    if (!id) return res.status(400).json({ success: false, message: "Product id is required." });
 
-        await redis.del(POPULAR_CACHE_KEY);
+    const exists = await PopularModel.findOne({ id });
 
-        return res.status(201).json({
-            success: true,
-            message: "Product added to popular successfully.",
-            popular,
-        });
-
-    } catch (error) {
-        return res.status(500).json({
+    if (exists) {
+        return res.json({
             success: false,
-            message: "Failed to add popular product.",
-            error: error.message,
+            message: "Product already exists.",
         });
     }
-};
 
-export const deletePopularProduct = async (req, res) => {
-    try {
-        const { id } = req.params;
-        if (!id) return res.status(400).json({ success: false, message: "Product id is required." });
+    const popular = await PopularModel.create({ id });
 
-        await PopularModel.deleteOne({ id });
+    await redis.del(POPULAR_CACHE_KEY);
 
-        await redis.del(POPULAR_CACHE_KEY);
+    return res.status(201).json({
+        success: true,
+        message: "Product added to popular successfully.",
+        popular,
+    });
+});
 
-        return res.status(200).json({
-            success: true,
-            message: "Product removed from popular successfully.",
-        });
+export const deletePopularProduct = errorCatch(async (req, res) => {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ success: false, message: "Product id is required." });
 
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: "Failed to delete popular product.",
-            error: error.message,
-        });
-    }
-};
+    await PopularModel.deleteOne({ id });
+
+    await redis.del(POPULAR_CACHE_KEY);
+
+    return res.status(200).json({
+        success: true,
+        message: "Product removed from popular successfully.",
+    });
+});
