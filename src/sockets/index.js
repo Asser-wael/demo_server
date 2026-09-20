@@ -6,7 +6,7 @@ let io;
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
-  "https://demo-client-ashen.vercel.app",
+  "https://demo.cmcsweb.online",
 ].filter(Boolean);
 
 const initSocket = (server) => {
