@@ -44,13 +44,23 @@ export const createBroadcast = errorCatch(async (req, res) => {
     });
 
     if (mode === "now") {
-        await sendPushToAllUsers({
-            title: broadcast.title,
-            body: broadcast.message,
-        });
-        broadcast.status = "completed";
-        broadcast.sentCount = targetCount;
-        await broadcast.save();
+        try {
+            await sendPushToAllUsers({
+                title: broadcast.title,
+                body: broadcast.message,
+            });
+            broadcast.sentCount = targetCount;
+        } catch (error) {
+            // Per-subscription failures are already caught inside
+            // sendPushToSubscriptions — reaching here means something
+            // upstream (the DB query, webpush config, etc.) failed
+            // entirely. Don't fail the whole request or leave the
+            // broadcast stuck "pending" forever; record it and move on.
+            console.error("broadcast send failed:", error);
+        } finally {
+            broadcast.status = "completed";
+            await broadcast.save();
+        }
     }
     // mode === "scheduled" is picked up by the broadcast scheduler job
     // (src/jobs/broadcastScheduler.js), which delivers to each subscriber

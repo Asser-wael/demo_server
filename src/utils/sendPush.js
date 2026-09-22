@@ -10,9 +10,20 @@ export const sendPushToSubscriptions = async (subs, payload) => {
 
     const results = await Promise.allSettled(
         subs.map((sub) =>
-            webpush.sendNotification(
-                { endpoint: sub.endpoint, keys: sub.keys },
-                JSON.stringify(payload)
+            // web-push throws SYNCHRONOUSLY (e.g. missing/invalid VAPID
+            // keys, malformed subscription keys) rather than always
+            // rejecting a promise. A bare `.map(sub => webpush.sendNotification(...))`
+            // lets that throw escape the whole `.map()` call, which crashes
+            // this entire batch (and the caller's request, e.g. an admin
+            // broadcast) instead of just failing that one subscription.
+            // Deferring the call inside `Promise.resolve().then()` turns any
+            // synchronous throw into a normal rejection that
+            // `Promise.allSettled` can catch per-subscription.
+            Promise.resolve().then(() =>
+                webpush.sendNotification(
+                    { endpoint: sub.endpoint, keys: sub.keys },
+                    JSON.stringify(payload)
+                )
             )
         )
     );
