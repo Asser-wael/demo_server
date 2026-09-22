@@ -332,6 +332,7 @@ export const saveSubscription = errorCatch(async (req, res) => {
             role: user.role == "admin" ? "admin" : "user",
             endpoint: subscription.endpoint,
             keys: subscription.keys,
+            ip: req.ip,
         },
         {
             upsert: true,

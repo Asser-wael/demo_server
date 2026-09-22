@@ -49,12 +49,7 @@ const initSocket = (server) => {
   // CONNECTION
   // ==========================================
   io.on("connection", (socket) => {
-    // Every authenticated socket automatically joins a room scoped to its
-    // own user id — no client-side "please join my order's room" step
-    // needed, and nothing here trusts an id the client supplies, so there
-    // is no room a user could ask to join that isn't already theirs.
-    // Re-runs on every reconnect for free, since "connection" fires again
-    // each time the client reconnects.
+
     if (socket.user?.id) {
       socket.join(`user:${socket.user.id}`);
     }

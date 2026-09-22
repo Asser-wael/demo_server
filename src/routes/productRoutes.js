@@ -11,6 +11,7 @@ import {
 
 import {
   adminMiddleware,
+  adminMutationLimiter,
   optionalAuthMiddleware,
   protect,
 } from "../middlewares/auth.js";
@@ -24,6 +25,7 @@ router.post(
   "/addProduct",
   protect,
   adminMiddleware,
+  adminMutationLimiter,
   upload.single("image"),
   addProduct
 );
@@ -33,6 +35,7 @@ router.put(
   "/updateProduct/:id",
   protect,
   adminMiddleware,
+  adminMutationLimiter,
   upload.single("image"),
   updateProduct
 );
@@ -42,6 +45,7 @@ router.delete(
   "/deleteProduct/:id",
   protect,
   adminMiddleware,
+  adminMutationLimiter,
   deleteProduct
 );
 

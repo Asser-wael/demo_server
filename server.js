@@ -5,6 +5,7 @@ import app from "./src/app.js";
 import connectDB from "./src/config/db.js";
 import { connectRedis } from "./src/config/redis.js";
 import { initSocket } from "./src/sockets/index.js";
+import { startBroadcastScheduler } from "./src/jobs/broadcastScheduler.js";
 
 const PORT = process.env.PORT || 5000;
 
@@ -22,6 +23,9 @@ const start = async () => {
 
     initSocket(server);
     console.log("✅ Socket.io ready");
+
+    startBroadcastScheduler();
+    console.log("✅ Broadcast scheduler ready");
 
     server.listen(PORT, "0.0.0.0", () => {
       console.log(`🔥 Server running on 0.0.0.0:${PORT}`);

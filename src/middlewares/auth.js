@@ -140,3 +140,28 @@ export const subscribeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Admin-mutating routes (settings, order status/delete, product/category
+// CRUD) sit only behind the blanket 300/15min API-wide limiter today — a
+// compromised or leaked admin token could otherwise hammer these writes
+// (several of which also trigger Cloudinary uploads) at the same rate as
+// harmless GETs. Generous enough for real admin usage, tight enough to
+// blunt abuse.
+export const adminMutationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  message: { success: false, message: "Too many requests, please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Broadcasting a push notification fans out to every subscribed device —
+// by far the most expensive admin write in the app — so it gets its own,
+// much tighter limiter rather than sharing adminMutationLimiter's budget.
+export const broadcastLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { success: false, message: "Too many broadcasts, please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

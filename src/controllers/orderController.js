@@ -386,12 +386,6 @@ export const checkout = async (req, res) => {
 };
 
 
-// ============================================================
-// GET /orders
-// Admin - Get all orders (paginated — this list only grows, and an
-// unbounded `Order.find()` here would eventually mean loading every
-// order ever placed on every single admin page visit)
-// ============================================================
 export const getOrders = errorCatch(async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
@@ -419,11 +413,6 @@ export const getOrders = errorCatch(async (req, res) => {
 });
 
 
-// ============================================================
-// GET /orders/user
-// Get current user's orders (paginated for the same reason as above —
-// a long-time customer's order history shouldn't all load at once)
-// ============================================================
 export const getOrdersUser = errorCatch(async (req, res) => {
     const userId = req.user?.id;
 
@@ -453,10 +442,7 @@ export const getOrdersUser = errorCatch(async (req, res) => {
             .skip(skip)
             .limit(limit),
         Order.countDocuments({ user: userId }),
-        // Lightweight aggregate across ALL of this user's orders (not just
-        // the current page) — the "Total Spent" / "Pending" stats on the
-        // Orders page need to stay accurate regardless of which page is
-        // loaded, so they can't be derived from the paginated array alone.
+
         Order.aggregate([
             { $match: { user: new mongoose.Types.ObjectId(userId) } },
             {

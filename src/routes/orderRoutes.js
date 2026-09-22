@@ -12,6 +12,7 @@ import {
 
 import {
     adminMiddleware,
+    adminMutationLimiter,
     protect,
     optionalAuthMiddleware,
     checkoutLimiter,
@@ -73,6 +74,7 @@ router.put(
     "/changeStatus/:id",
     protect,
     adminMiddleware,
+    adminMutationLimiter,
     changeStatus
 );
 
@@ -81,6 +83,7 @@ router.delete(
     "/deleteOrder/:id",
     protect,
     adminMiddleware,
+    adminMutationLimiter,
     deleteOrder
 );
 

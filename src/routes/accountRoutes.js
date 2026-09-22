@@ -10,7 +10,7 @@ import { protect, sensitiveActionLimiter } from "../middlewares/auth.js";
 const router = express.Router();
 
 router.get("/", protect, getProfile);
-router.put("/", protect, updateProfile);
+router.put("/", protect, sensitiveActionLimiter, updateProfile);
 router.put("/password", protect, sensitiveActionLimiter, changePassword);
 router.delete("/", protect, sensitiveActionLimiter, deleteAccount);
 

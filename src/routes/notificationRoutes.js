@@ -14,9 +14,15 @@ import {
 } from "../controllers/notificationController.js";
 
 import {
+    createBroadcast,
+    getBroadcasts,
+} from "../controllers/broadcastController.js";
+
+import {
     protect,
     adminMiddleware,
     subscribeLimiter,
+    broadcastLimiter,
 } from "../middlewares/auth.js";
 
 const router = express.Router();
@@ -104,6 +110,24 @@ router.post(
     subscribeLimiter,
     protect,
     removeSubscription
+);
+
+// Broadcast a push to every diner — immediately, or at a scheduled time
+// resolved to each subscriber's own local timezone.
+router.post(
+    "/broadcast",
+    protect,
+    adminMiddleware,
+    broadcastLimiter,
+    createBroadcast
+);
+
+// Recent broadcast history (for the admin dashboard panel)
+router.get(
+    "/broadcast",
+    protect,
+    adminMiddleware,
+    getBroadcasts
 );
 
 
